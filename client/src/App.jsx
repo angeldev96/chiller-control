@@ -1,17 +1,72 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Power, ThermometerSnowflake } from 'lucide-react';
 import './App.css';
 
+const API_BASE_URL = 'http://localhost:3001/api';
 
 export default function ChillerControl() {
   const [isOn, setIsOn] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  const handleTurnOn = () => {
-    setIsOn(true);
+  // Función para obtener el estado actual del chiller
+  const fetchStatus = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/chiller/status`);
+      const data = await response.json();
+      if (data.success) {
+        setIsOn(data.isOn);
+      } else {
+        setError(data.message);
+      }
+    } catch (err) {
+      setError('Error al obtener el estado del chiller');
+    }
   };
 
-  const handleTurnOff = () => {
-    setIsOn(false);
+  // Cargar estado inicial
+  useEffect(() => {
+    fetchStatus();
+  }, []);
+
+  const handleTurnOn = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/chiller/on`, {
+        method: 'POST',
+      });
+      const data = await response.json();
+      if (data.success) {
+        setIsOn(true);
+      } else {
+        setError(data.message);
+      }
+    } catch (err) {
+      setError('Error al encender el chiller');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleTurnOff = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/chiller/off`, {
+        method: 'POST',
+      });
+      const data = await response.json();
+      if (data.success) {
+        setIsOn(false);
+      } else {
+        setError(data.message);
+      }
+    } catch (err) {
+      setError('Error al apagar el chiller');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -38,30 +93,37 @@ export default function ChillerControl() {
             </div>
           </div>
           
+          {/* Error Message */}
+          {error && (
+            <div className="p-4 bg-red-100 text-red-700 text-center">
+              {error}
+            </div>
+          )}
+          
           {/* Control Buttons - Now with more space from the banner */}
           <div className="p-6 pt-2">
             <p className="text-gray-600 text-center mb-4 text-sm">Seleccione una acción:</p>
             <div className="flex flex-col sm:flex-row gap-4">
               <button
                 onClick={handleTurnOn}
-                disabled={isOn}
+                disabled={isOn || isLoading}
                 className={`flex-1 py-3 px-6 rounded-lg font-medium text-white ${
-                  isOn ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600'
+                  (isOn || isLoading) ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600'
                 } transition-all flex items-center justify-center shadow`}
               >
                 <Power className="mr-2" size={20} />
-                Encender
+                {isLoading ? 'Procesando...' : 'Encender'}
               </button>
               
               <button
                 onClick={handleTurnOff}
-                disabled={!isOn}
+                disabled={!isOn || isLoading}
                 className={`flex-1 py-3 px-6 rounded-lg font-medium text-white ${
-                  !isOn ? 'bg-gray-400 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-600'
+                  (!isOn || isLoading) ? 'bg-gray-400 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-600'
                 } transition-all flex items-center justify-center shadow`}
               >
                 <Power className="mr-2" size={20} />
-                Apagar
+                {isLoading ? 'Procesando...' : 'Apagar'}
               </button>
             </div>
           </div>

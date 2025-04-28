@@ -13,11 +13,13 @@ app.use(cors());
 app.use(express.json());
 
 // --- Configuración Esencial ---
-const TARGET_IP = "192.168.30.50";     // IP del dispositivo
+// const TARGET_IP = "192.168.30.50";     // IP del dispositivo
+const TARGET_IP = "192.168.7.10";     // IP del dispositivo
+
 const TARGET_PORT = 502;               // Puerto Modbus TCP
 const SLAVE_ID = 1;                    // ID del esclavo
-const CHILLER_ON_ADDRESS = 200;        // Dirección para encender chiller
-const CHILLER_OFF_ADDRESS = 201;       // Dirección para apagar chiller
+const CHILLER_ON_ADDRESS = 49;        // Dirección para encender chiller
+const CHILLER_OFF_ADDRESS = 50;       // Dirección para apagar chiller
 const CHILLER_STATUS_ADDRESS = 202;    // Dirección para leer estado
 const TIMEOUT = 5000;                   // Timeout general (ms)
 
@@ -33,41 +35,45 @@ async function getModbusClient() {
 }
 
 // Endpoint para encender el chiller (sin cambios en la lógica interna)
-app.post('/api/chiller/on', async (req, res) => {
-    let client; // Declarar fuera para poder usarlo en finally
-    try {
-        client = await getModbusClient(); // Obtener el cliente conectado
-        await client.writeRegister(CHILLER_ON_ADDRESS, 1);
-        res.json({ success: true, message: 'Chiller encendido' });
-    } catch (error) {
-        console.error("Error al encender:", error); // Mejor loguear el error en el servidor
-        res.status(500).json({ success: false, message: error.message || 'Error interno del servidor' });
-    } finally {
-        // Asegurarse de que client existe y está abierto antes de cerrar
-        if (client && client.isOpen) {
-            client.close(() => { console.log("Cliente Modbus cerrado (ON)"); });
-        } else if (client && !client.isOpen) {
-             console.log("Cliente Modbus ya estaba cerrado (ON)");
-        }
-    }
-});
-
-// Endpoint para apagar el chiller (sin cambios en la lógica interna)
-app.post('/api/chiller/off', async (req, res) => {
+// Endpoint para poner el chiller en modo AUTO
+app.post('/api/chiller/mode/auto', async (req, res) => {
     let client;
     try {
         client = await getModbusClient();
-        await client.writeRegister(CHILLER_OFF_ADDRESS, 0); // Asegúrate que el valor 0 es correcto para apagar
-        res.json({ success: true, message: 'Chiller apagado' });
+        console.log('Intentando escribir Coil 49=true, Coil 50=false'); // Log de depuración
+        // Primero pon el deseado en TRUE
+        await client.writeCoil(CHILLER_AUTO_MODE_ADDRESS, true);
+        // Luego pon el otro en FALSE explícitamente
+        await client.writeCoil(CHILLER_MANUAL_MODE_ADDRESS, false);
+        console.log('Escritura de Coils (AUTO) completada.'); // Log de depuración
+        res.json({ success: true, message: 'Chiller puesto en modo AUTO' });
     } catch (error) {
-        console.error("Error al apagar:", error);
-        res.status(500).json({ success: false, message: error.message || 'Error interno del servidor' });
+        // LOG DETALLADO DEL ERROR
+        console.error("Error detallado al poner modo AUTO:", error);
+        res.status(500).json({ success: false, message: error.message || 'Error interno del servidor', code: error.code, errno: error.errno });
     } finally {
-        if (client && client.isOpen) {
-            client.close(() => { console.log("Cliente Modbus cerrado (OFF)"); });
-        } else if (client && !client.isOpen) {
-             console.log("Cliente Modbus ya estaba cerrado (OFF)");
-        }
+        // ... (código finally sin cambios) ...
+    }
+});
+
+// Endpoint para poner el chiller en modo MANUAL (haz lo mismo)
+app.post('/api/chiller/mode/manual', async (req, res) => {
+    let client;
+    try {
+        client = await getModbusClient();
+        console.log('Intentando escribir Coil 50=true, Coil 49=false'); // Log de depuración
+        // Primero pon el deseado en TRUE
+        await client.writeCoil(CHILLER_MANUAL_MODE_ADDRESS, true);
+        // Luego pon el otro en FALSE explícitamente
+        await client.writeCoil(CHILLER_AUTO_MODE_ADDRESS, false);
+        console.log('Escritura de Coils (MANUAL) completada.'); // Log de depuración
+        res.json({ success: true, message: 'Chiller puesto en modo MANUAL' });
+    } catch (error) {
+        // LOG DETALLADO DEL ERROR
+        console.error("Error detallado al poner modo MANUAL:", error);
+        res.status(500).json({ success: false, message: error.message || 'Error interno del servidor', code: error.code, errno: error.errno });
+    } finally {
+         // ... (código finally sin cambios) ...
     }
 });
 

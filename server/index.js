@@ -11,6 +11,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Importar el módulo de base de datos
+const db = require('./database');
+
 // --- Configuración Esencial ---
 const TARGET_IP = "192.168.30.50";     // IP del dispositivo
 const TARGET_PORT = 502;               // Puerto Modbus TCP
@@ -257,6 +260,105 @@ app.get('/api/chiller/test_modbus_direction', async (req, res) => {
              // Si el cliente existe pero no está abierto (pudo fallar la conexión)
             console.log("Cliente Modbus no estaba abierto o ya cerrado (Status Endpoint)");
         }
+    }
+});
+
+// --- API endpoints for database data ---
+app.get('/api/chiller/data/:table', async (req, res) => {
+    try {
+        const { table } = req.params;
+        const { limit = 100, date } = req.query;
+        
+        // Validar que la tabla sea una de las permitidas
+        const allowedTables = ['chiller_agua_minutos', 'chiller_agua_segundos', 
+                             'chiller_aire_minutos', 'chiller_aire_segundos'];
+        if (!allowedTables.includes(table)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Tabla no válida' 
+            });
+        }
+
+        let query = `SELECT * FROM ${table}`;
+        const params = [];
+
+        if (date) {
+            query += ' WHERE DATE(fecha_hora) = ?';
+            params.push(date);
+        }
+
+        query += ' ORDER BY fecha_hora DESC LIMIT ?';
+        params.push(parseInt(limit));
+
+        const [rows] = await db.pool.query(query, params);
+        const [totalRows] = await db.pool.query(`SELECT COUNT(*) as total FROM ${table}`);
+
+        res.json({ 
+            success: true, 
+            data: rows,
+            total: totalRows[0].total
+        });
+    } catch (error) {
+        console.error('Error al obtener datos:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error al obtener datos del chiller' 
+        });
+    }
+});
+
+app.get('/api/chiller/data/:table/range', async (req, res) => {
+    try {
+        const { table } = req.params;
+        const { startDate, endDate } = req.query;
+
+        if (!startDate || !endDate) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Se requieren fechas de inicio y fin' 
+            });
+        }
+
+        const allowedTables = ['chiller_agua_minutos', 'chiller_agua_segundos', 
+                             'chiller_aire_minutos', 'chiller_aire_segundos'];
+        if (!allowedTables.includes(table)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Tabla no válida' 
+            });
+        }
+
+        const data = await db.getRecordsByDateRange(table, startDate, endDate);
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('Error al obtener datos por rango:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error al obtener datos del chiller por rango de fechas' 
+        });
+    }
+});
+
+app.get('/api/chiller/data/:table/last', async (req, res) => {
+    try {
+        const { table } = req.params;
+        const allowedTables = ['chiller_agua_minutos', 'chiller_agua_segundos', 
+                             'chiller_aire_minutos', 'chiller_aire_segundos'];
+        if (!allowedTables.includes(table)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Tabla no válida' 
+            });
+        }
+
+        const data = await db.getLastRecord(table);
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('Error al obtener último registro:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error al obtener el último registro del chiller' 
+        });
     }
 });
 

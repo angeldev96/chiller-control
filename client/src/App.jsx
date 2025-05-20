@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Power, ThermometerSnowflake } from 'lucide-react';
-import { Routes, Route, Link, useLocation } from 'react-router-dom';
+import { Routes, Route, Link, useLocation } from 'react-router';
 import './App.css';
 import DataLogger from './components/DataLogger';
 

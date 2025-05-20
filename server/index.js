@@ -12,16 +12,16 @@ app.use(cors());
 app.use(express.json());
 
 // --- Configuración Esencial ---
-const TARGET_IP = "192.168.7.10";     // IP del dispositivo
+const TARGET_IP = "192.168.30.50";     // IP del dispositivo
 const TARGET_PORT = 502;               // Puerto Modbus TCP
 const SLAVE_ID = 1;                    // ID del esclavo
 const TIMEOUT = 5000;                  // Timeout general (ms)
 const PULSE_WIDTH_MS = 1000;           // Duración del pulso en milisegundos
 
 // --- Button Addresses (Base 0) ---
-const START_BUTTON_ADDRESS = 39;       // Proworx 000040 (Encender)
-const CANCEL_ALARM_BUTTON_ADDRESS = 41; // Proworx 000042 (Cancelar Alarma)
-const CHILLER_STATUS_ADDRESS = 202;    // Dirección para leer estado
+const START_BUTTON_ADDRESS = 299;       // Proworx 000040 (Encender)
+const CANCEL_ALARM_BUTTON_ADDRESS = 300; // Proworx 000042 (Cancelar Alarma)
+const CHILLER_STATUS_ADDRESS = 15;    // Dirección para leer estado
 
 // Helper function for delays
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -150,34 +150,119 @@ app.post('/api/chiller/off', async (req, res) => {
     }
 });
 
+const CHILLER_STATUS_COIL_ADDRESS = 15;
+const NUM_COILS_TO_READ = 1;
+
 // Endpoint para obtener el estado del chiller
+
+// --- Endpoint Corregido ---
 app.get('/api/chiller/status', async (req, res) => {
-    let client;
+    let client; // Declara fuera para poder usar en finally
     try {
+        // Asumimos que getModbusClient() configura la IP, puerto, SlaveID y timeout
+        // y devuelve un cliente conectado o lanza un error si falla.
         client = await getModbusClient();
-        const result = await client.readHoldingRegisters(CHILLER_STATUS_ADDRESS, 1);
-        // Valida que result y result.data existen antes de acceder
-        if (result && result.data && result.data.length > 0) {
-            const isOn = result.data[0] === 1; // Asume 1=ON, otro valor=OFF
-            res.json({ success: true, isOn });
+        console.log(`Intentando leer estado del Chiller (Coil ${CHILLER_STATUS_COIL_ADDRESS} - PLC ${CHILLER_STATUS_COIL_ADDRESS + 1})`);
+
+        // *** ¡CAMBIO CLAVE AQUÍ! ***
+        // Usar readCoils en lugar de readHoldingRegisters
+        const result = await client.readCoils(CHILLER_STATUS_COIL_ADDRESS, NUM_COILS_TO_READ);
+
+        // Validar la respuesta de readCoils
+        // result.data será un array de booleanos, ej: [true] o [false]
+        if (result && result.data && result.data.length >= NUM_COILS_TO_READ) {
+            // *** ¡CAMBIO CLAVE AQUÍ! ***
+            // El estado es directamente el valor booleano en el primer elemento
+            const isOn = result.data[0];
+
+            console.log(`Estado del chiller (Coil ${CHILLER_STATUS_COIL_ADDRESS}) leído: ${isOn} (${isOn ? 'ENCENDIDO' : 'APAGADO'})`);
+            // Devolver el estado booleano directamente
+            res.json({ success: true, isOn: isOn });
+
         } else {
-            throw new Error("Respuesta inválida del dispositivo Modbus");
+            // La respuesta no fue la esperada (podría ser un error de Modbus manejado
+            // por la biblioteca, o simplemente una respuesta vacía/incorrecta)
+            console.error("Respuesta Modbus inválida o vacía al leer Coil:", result);
+            throw new Error("Respuesta inválida o vacía del dispositivo Modbus al leer el estado");
         }
+
     } catch (error) {
-        console.error("Error al obtener estado:", error);
-        res.status(500).json({ success: false, message: error.message || 'Error interno del servidor' });
+        // Capturar errores de conexión (de getModbusClient) o de lectura (de readCoils)
+        console.error("Error en /api/chiller/status:", error.message || error);
+        res.status(500).json({
+            success: false,
+            // Devuelve el mensaje de error si existe, o uno genérico
+            message: `Error al obtener estado del chiller: ${error.message || 'Error interno del servidor'}`
+        });
     } finally {
+        // Asegurarse de cerrar la conexión si se abrió
+        // (Ajusta esto según cómo funcione tu getModbusClient, podría manejar pooling)
         if (client && client.isOpen) {
-            client.close(() => { console.log("Cliente Modbus cerrado (Status)"); });
-        } else if (client && !client.isOpen) {
-            console.log("Cliente Modbus ya estaba cerrado (Status)");
+            client.close(() => {
+                console.log("Cliente Modbus cerrado (Status Endpoint)");
+            });
+        } else if (client) {
+             // Si el cliente existe pero no está abierto (pudo fallar la conexión)
+            console.log("Cliente Modbus no estaba abierto o ya cerrado (Status Endpoint)");
+        }
+    }
+});
+
+app.get('/api/chiller/test_modbus_direction', async (req, res) => {
+    let client; // Declara fuera para poder usar en finally
+    try {
+        // Asumimos que getModbusClient() configura la IP, puerto, SlaveID y timeout
+        // y devuelve un cliente conectado o lanza un error si falla.
+        client = await getModbusClient();
+        console.log(`Intentando leer estado del Chiller (Coil ${CHILLER_STATUS_COIL_ADDRESS} - PLC ${CHILLER_STATUS_COIL_ADDRESS + 1})`);
+
+        // *** ¡CAMBIO CLAVE AQUÍ! ***
+        // Usar readCoils en lugar de readHoldingRegisters
+        const result = await client.readCoils(CHILLER_STATUS_COIL_ADDRESS, NUM_COILS_TO_READ);
+
+        // Validar la respuesta de readCoils
+        // result.data será un array de booleanos, ej: [true] o [false]
+        if (result && result.data && result.data.length >= NUM_COILS_TO_READ) {
+            // *** ¡CAMBIO CLAVE AQUÍ! ***
+            // El estado es directamente el valor booleano en el primer elemento
+            const isOn = result.data[0];
+
+            console.log(`Estado del chiller (Coil ${CHILLER_STATUS_COIL_ADDRESS}) leído: ${isOn} (${isOn ? 'ENCENDIDO' : 'APAGADO'})`);
+            // Devolver el estado booleano directamente
+            res.json({ success: true, isOn: isOn });
+
+        } else {
+            // La respuesta no fue la esperada (podría ser un error de Modbus manejado
+            // por la biblioteca, o simplemente una respuesta vacía/incorrecta)
+            console.error("Respuesta Modbus inválida o vacía al leer Coil:", result);
+            throw new Error("Respuesta inválida o vacía del dispositivo Modbus al leer el estado");
+        }
+
+    } catch (error) {
+        // Capturar errores de conexión (de getModbusClient) o de lectura (de readCoils)
+        console.error("Error en /api/chiller/status:", error.message || error);
+        res.status(500).json({
+            success: false,
+            // Devuelve el mensaje de error si existe, o uno genérico
+            message: `Error al obtener estado del chiller: ${error.message || 'Error interno del servidor'}`
+        });
+    } finally {
+        // Asegurarse de cerrar la conexión si se abrió
+        // (Ajusta esto según cómo funcione tu getModbusClient, podría manejar pooling)
+        if (client && client.isOpen) {
+            client.close(() => {
+                console.log("Cliente Modbus cerrado (Status Endpoint)");
+            });
+        } else if (client) {
+             // Si el cliente existe pero no está abierto (pudo fallar la conexión)
+            console.log("Cliente Modbus no estaba abierto o ya cerrado (Status Endpoint)");
         }
     }
 });
 
 const PORT = 3001;
-app.listen(PORT, () => {
-    console.log(`Servidor Modbus API corriendo en puerto ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Servidor HTTP corriendo en puerto ${PORT} y accesible desde la red`);
 });
 
 // Exportar app para tests si es necesario

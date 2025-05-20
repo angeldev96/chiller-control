@@ -2,7 +2,10 @@ import { useState, useEffect } from 'react';
 import { Power, ThermometerSnowflake } from 'lucide-react';
 import './App.css';
 
-const API_BASE_URL = 'http://localhost:3001/api';
+// Use HTTP since SSL is not available
+const DOMAIN = 'cisa.arrayanhn.com';
+const PORT = '3001';
+const API_BASE_URL = `http://${DOMAIN}:${PORT}/api`;
 
 export default function ChillerControl() {
   const [isOn, setIsOn] = useState(false);

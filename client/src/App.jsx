@@ -1,16 +1,27 @@
 import { useState, useEffect } from 'react';
-import { Power, ThermometerSnowflake } from 'lucide-react';
+import { Power, ThermometerSnowflake, Edit2, Check } from 'lucide-react';
 import './App.css';
 
-// Use HTTP since SSL is not available
-const DOMAIN = 'cisa.arrayanhn.com';
+// Local development configuration
+const DOMAIN = 'localhost';
 const PORT = '3001';
 const API_BASE_URL = `http://${DOMAIN}:${PORT}/api`;
+
+// Constants for validation
+const MIN_TEMPERATURE = 0;
+const MAX_TEMPERATURE = 50;
 
 export default function ChillerControl() {
   const [isOn, setIsOn] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [onSetpoint, setOnSetpoint] = useState(0);
+  const [offSetpoint, setOffSetpoint] = useState(0);
+  const [editingOnSetpoint, setEditingOnSetpoint] = useState(false);
+  const [editingOffSetpoint, setEditingOffSetpoint] = useState(false);
+  const [tempOnSetpoint, setTempOnSetpoint] = useState('');
+  const [tempOffSetpoint, setTempOffSetpoint] = useState('');
+  const [setpointError, setSetpointError] = useState('');
 
   // Función para obtener el estado actual del chiller
   const fetchStatus = async () => {
@@ -72,6 +83,32 @@ export default function ChillerControl() {
     }
   };
 
+  const handleOnSetpointChange = (e) => {
+    setTempOnSetpoint(e.target.value);
+  };
+
+  const handleOffSetpointChange = (e) => {
+    setTempOffSetpoint(e.target.value);
+  };
+
+  const handleOnSetpointSubmit = () => {
+    const value = parseFloat(tempOnSetpoint);
+    if (!isNaN(value)) {
+      setOnSetpoint(value);
+      setEditingOnSetpoint(false);
+      setTempOnSetpoint('');
+    }
+  };
+
+  const handleOffSetpointSubmit = () => {
+    const value = parseFloat(tempOffSetpoint);
+    if (!isNaN(value)) {
+      setOffSetpoint(value);
+      setEditingOffSetpoint(false);
+      setTempOffSetpoint('');
+    }
+  };
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
       <div className="w-full max-w-md">
@@ -81,7 +118,7 @@ export default function ChillerControl() {
             <h1 className="text-white text-center text-2xl font-bold">Control de Chiller</h1>
           </div>
           
-          {/* Status Banner - Modified with lighter colors and more separation */}
+          {/* Status Banner */}
           <div className={`p-6 text-center ${isOn ? 'bg-green-100' : 'bg-red-100'} border-b-4 ${isOn ? 'border-green-400' : 'border-red-400'} mb-4`}>
             <div className="flex items-center justify-center">
               <ThermometerSnowflake className={`mr-3 ${isOn ? 'text-green-600' : 'text-red-600'}`} size={32} />
@@ -95,6 +132,79 @@ export default function ChillerControl() {
               </div>
             </div>
           </div>
+
+          {/* Setpoints Section */}
+          <div className="p-6 border-b border-gray-200">
+            <div className="space-y-4">
+              {/* On Setpoint */}
+              <div className="flex items-center justify-between">
+                <span className="text-gray-700">Consigna de Encendido:</span>
+                <div className="flex items-center space-x-2">
+                  {editingOnSetpoint ? (
+                    <>
+                      <input
+                        type="number"
+                        value={tempOnSetpoint}
+                        onChange={handleOnSetpointChange}
+                        className="w-20 px-2 py-1 border rounded"
+                        placeholder={onSetpoint}
+                      />
+                      <button
+                        onClick={handleOnSetpointSubmit}
+                        className="p-1 text-green-600 hover:text-green-700"
+                      >
+                        <Check size={20} />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-lg font-medium">{onSetpoint}°C</span>
+                      <button
+                        onClick={() => setEditingOnSetpoint(true)}
+                        className="p-1 text-blue-600 hover:text-blue-700"
+                      >
+                        <Edit2 size={20} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Off Setpoint */}
+              <div className="flex items-center justify-between">
+                <span className="text-gray-700">Consigna de Apagado:</span>
+                <div className="flex items-center space-x-2">
+                  {editingOffSetpoint ? (
+                    <>
+                      <input
+                        type="number"
+                        value={tempOffSetpoint}
+                        onChange={handleOffSetpointChange}
+                        className="w-20 px-2 py-1 border rounded"
+                        placeholder={offSetpoint}
+                      />
+                      <button
+                        onClick={handleOffSetpointSubmit}
+                        className="p-1 text-green-600 hover:text-green-700"
+                      >
+                        <Check size={20} />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-lg font-medium">{offSetpoint}°C</span>
+                      <button
+                        onClick={() => setEditingOffSetpoint(true)}
+                        className="p-1 text-blue-600 hover:text-blue-700"
+                      >
+                        <Edit2 size={20} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
           
           {/* Error Message */}
           {error && (
@@ -103,7 +213,7 @@ export default function ChillerControl() {
             </div>
           )}
           
-          {/* Control Buttons - Now with more space from the banner */}
+          {/* Control Buttons */}
           <div className="p-6 pt-2">
             <p className="text-gray-600 text-center mb-4 text-sm">Seleccione una acción:</p>
             <div className="flex flex-col sm:flex-row gap-4">
@@ -131,7 +241,7 @@ export default function ChillerControl() {
             </div>
           </div>
           
-          {/* Footer with additional status info */}
+          {/* Footer */}
           <div className="bg-gray-100 p-4 border-t border-gray-200">
             <p className="text-center text-gray-600">
               Estado actual: <span className={`font-medium ${isOn ? 'text-green-600' : 'text-red-600'}`}>

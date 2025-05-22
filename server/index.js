@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const XLSX = require('xlsx');
+const path = require('path');
 
 // Fix for debug package issue
 process.env.DEBUG = '*'; // Enable all debug logs or use 'modbus-serial' for specific logs
@@ -10,6 +12,9 @@ const ModbusRTU = require('modbus-serial');
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Importar el módulo de base de datos
+const db = require('./database');
 
 // --- Configuración Esencial ---
 const TARGET_IP = "192.168.30.50";     // IP del dispositivo
@@ -258,6 +263,240 @@ app.get('/api/chiller/test_modbus_direction', async (req, res) => {
             console.log("Cliente Modbus no estaba abierto o ya cerrado (Status Endpoint)");
         }
     }
+});
+
+// --- API endpoints for database data ---
+app.get('/api/chiller/data/:table', async (req, res) => {
+    try {
+        const { table } = req.params;
+        const { date } = req.query;
+        
+        // Validar que la tabla sea una de las permitidas
+        const allowedTables = ['chiller_agua_minutos', 'chiller_agua_segundos', 
+                             'chiller_aire_minutos', 'chiller_aire_segundos'];
+        if (!allowedTables.includes(table)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Tabla no válida' 
+            });
+        }
+
+        let query = `SELECT * FROM ${table}`;
+        const params = [];
+
+        if (date) {
+            query += ' WHERE DATE(fecha_hora) = ?';
+            params.push(date);
+        }
+
+        // Para tablas de segundos, mostrar los últimos 1000 registros
+        // Para tablas de minutos con fecha, mostrar todos los registros del día
+        const isMinutesTable = table.includes('minutos');
+        if (!isMinutesTable) {
+            query += ' ORDER BY fecha_hora DESC LIMIT 1000';
+        } else if (!date) {
+            // Si es tabla de minutos pero no hay fecha, mostrar los últimos 100
+            query += ' ORDER BY fecha_hora DESC LIMIT 100';
+        } else {
+            query += ' ORDER BY fecha_hora DESC';
+        }
+
+        const [rows] = await db.pool.query(query, params);
+        const [totalRows] = await db.pool.query(`SELECT COUNT(*) as total FROM ${table}`);
+
+        // Format date consistently in the response
+        const formattedRows = rows.map(row => {
+            if (row.fecha_hora) {
+                // Format date as YYYY-MM-DD HH:MM:SS
+                const fecha = row.fecha_hora;
+                const formattedDate = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')} ${String(fecha.getHours()).padStart(2, '0')}:${String(fecha.getMinutes()).padStart(2, '0')}:${String(fecha.getSeconds()).padStart(2, '0')}`;
+                
+                return {
+                    ...row,
+                    fecha_hora: formattedDate
+                };
+            }
+            return row;
+        });
+
+        res.json({ 
+            success: true, 
+            data: formattedRows,
+            total: totalRows[0].total
+        });
+    } catch (error) {
+        console.error('Error al obtener datos:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error al obtener datos del chiller' 
+        });
+    }
+});
+
+app.get('/api/chiller/data/:table/range', async (req, res) => {
+    try {
+        const { table } = req.params;
+        const { startDate, endDate } = req.query;
+
+        if (!startDate || !endDate) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Se requieren fechas de inicio y fin' 
+            });
+        }
+
+        const allowedTables = ['chiller_agua_minutos', 'chiller_agua_segundos', 
+                             'chiller_aire_minutos', 'chiller_aire_segundos'];
+        if (!allowedTables.includes(table)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Tabla no válida' 
+            });
+        }
+
+        const data = await db.getRecordsByDateRange(table, startDate, endDate);
+        
+        // Format date consistently in the response
+        const formattedData = data.map(row => {
+            if (row.fecha_hora) {
+                // Format date as YYYY-MM-DD HH:MM:SS
+                const fecha = row.fecha_hora;
+                const formattedDate = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')} ${String(fecha.getHours()).padStart(2, '0')}:${String(fecha.getMinutes()).padStart(2, '0')}:${String(fecha.getSeconds()).padStart(2, '0')}`;
+                
+                return {
+                    ...row,
+                    fecha_hora: formattedDate
+                };
+            }
+            return row;
+        });
+        
+        res.json({ success: true, data: formattedData });
+    } catch (error) {
+        console.error('Error al obtener datos por rango:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error al obtener datos del chiller por rango de fechas' 
+        });
+    }
+});
+
+app.get('/api/chiller/data/:table/last', async (req, res) => {
+    try {
+        const { table } = req.params;
+        const allowedTables = ['chiller_agua_minutos', 'chiller_agua_segundos', 
+                             'chiller_aire_minutos', 'chiller_aire_segundos'];
+        if (!allowedTables.includes(table)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Tabla no válida' 
+            });
+        }
+
+        const data = await db.getLastRecord(table);
+        
+        // Format date consistently in the response
+        if (data && data.fecha_hora) {
+            const fecha = data.fecha_hora;
+            data.fecha_hora = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')} ${String(fecha.getHours()).padStart(2, '0')}:${String(fecha.getMinutes()).padStart(2, '0')}:${String(fecha.getSeconds()).padStart(2, '0')}`;
+        }
+        
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('Error al obtener último registro:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error al obtener el último registro del chiller' 
+        });
+    }
+});
+
+// Endpoint para exportar datos a Excel
+app.get('/api/chiller/export/:table', async (req, res) => {
+    try {
+        const { table } = req.params;
+        const { date } = req.query;
+
+        if (!date) {
+            return res.status(400).json({
+                success: false,
+                message: 'Se requiere una fecha para exportar'
+            });
+        }
+
+        // Solo permitir exportación de tablas de minutos por ahora
+        const allowedTables = ['chiller_aire_minutos', 'chiller_agua_minutos'];
+        if (!allowedTables.includes(table)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Solo se pueden exportar tablas de minutos'
+            });
+        }
+
+        // Consultar los datos
+        let query = `SELECT * FROM ${table} WHERE DATE(fecha_hora) = ? ORDER BY fecha_hora DESC`;
+        const [rows] = await db.pool.query(query, [date]);
+
+        // Formatear los datos para Excel
+        const formattedData = rows.map(row => {
+            const fecha = row.fecha_hora;
+            return {
+                ...row,
+                fecha_hora: `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')} ${String(fecha.getHours()).padStart(2, '0')}:${String(fecha.getMinutes()).padStart(2, '0')}:${String(fecha.getSeconds()).padStart(2, '0')}`
+            };
+        });
+
+        // Crear el libro de Excel
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(formattedData);
+
+        // Ajustar el ancho de las columnas
+        const colWidths = [];
+        for (let i = 0; i < Object.keys(formattedData[0] || {}).length; i++) {
+            colWidths.push({ wch: 15 }); // width = 15 characters
+        }
+        ws['!cols'] = colWidths;
+
+        // Añadir la hoja al libro
+        XLSX.utils.book_append_sheet(wb, ws, `Datos ${date}`);
+
+        // Generar el buffer del archivo
+        const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+        // Configurar headers para la descarga
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename=chiller_data_${table}_${date}.xlsx`);
+        
+        // Enviar el archivo
+        res.send(excelBuffer);
+
+    } catch (error) {
+        console.error('Error al exportar datos:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al exportar datos a Excel'
+        });
+    }
+});
+
+app.get('/api/chiller/uptime', async (req, res) => {
+  const { date } = req.query;
+  
+  try {
+    const query = `
+      SELECT
+        SUM(status_air) AS total_segundos_encendido_air,
+        SUM(status_vdf_pump_process) AS total_segundos_encendido_pump
+      FROM chiller_aire_segundos
+      WHERE DATE(fecha_hora) = ?
+    `;
+    
+    const [results] = await db.pool.query(query, [date]);
+    res.json(results[0]);
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ error: 'Error al obtener los datos de tiempo de encendido' });
+  }
 });
 
 const PORT = 3001;

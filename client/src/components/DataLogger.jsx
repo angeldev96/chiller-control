@@ -29,17 +29,34 @@ export default function DataLogger() {
   const [totalPages, setTotalPages] = useState(1);
   const [dateFilter, setDateFilter] = useState('');
 
+  const isMinutesTable = selectedOption.includes('minutos');
+
   const fetchData = async () => {
     setLoading(true);
     setError(null);
     try {
-      let url = `http://localhost:3001/api/chiller/data/${selectedOption}?limit=${ITEMS_PER_PAGE}`;
-      if (dateFilter) {
-        url += `&date=${dateFilter}`;
+      let url = `http://localhost:3001/api/chiller/data/${selectedOption}`;
+      
+      // Para tablas de minutos, no usamos paginación y traemos todos los datos del día
+      if (isMinutesTable) {
+        if (dateFilter) {
+          url += `?date=${dateFilter}`;
+        }
+      } else {
+        // Para tablas de segundos, mantenemos la paginación
+        url += `?limit=${ITEMS_PER_PAGE}`;
+        if (dateFilter) {
+          url += `&date=${dateFilter}`;
+        }
       }
+      
       const response = await axios.get(url);
       setData(response.data.data || []);
-      setTotalPages(Math.ceil((response.data.total || 0) / ITEMS_PER_PAGE));
+      
+      // Solo calculamos páginas totales para tablas de segundos
+      if (!isMinutesTable) {
+        setTotalPages(Math.ceil((response.data.total || 0) / ITEMS_PER_PAGE));
+      }
     } catch (err) {
       setError('Error al cargar los datos');
       console.error('Error:', err);
@@ -54,7 +71,6 @@ export default function DataLogger() {
 
   const formatDateTime = (dateStr) => {
     try {
-      // La fecha ya viene convertida del backend, solo necesitamos formatearla
       return dayjs(dateStr).format('DD/MM/YYYY HH:mm:ss');
     } catch (error) {
       console.error('Error al formatear fecha:', error);
@@ -68,7 +84,7 @@ export default function DataLogger() {
     return (
       <tr className="bg-gray-100">
         {headers.map(header => (
-          <th key={header} className="px-4 py-2 text-left">
+          <th key={header} className="px-4 py-2 text-left sticky top-0 bg-gray-100 z-10">
             {header.replace(/_/g, ' ').toUpperCase()}
           </th>
         ))}
@@ -111,7 +127,10 @@ export default function DataLogger() {
             <select
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={selectedOption}
-              onChange={e => setSelectedOption(e.target.value)}
+              onChange={e => {
+                setSelectedOption(e.target.value);
+                setCurrentPage(1); // Reset page when changing database
+              }}
             >
               {opciones.map(opt => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -128,7 +147,10 @@ export default function DataLogger() {
               type="date"
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={dateFilter}
-              onChange={e => setDateFilter(e.target.value)}
+              onChange={e => {
+                setDateFilter(e.target.value);
+                setCurrentPage(1); // Reset page when changing date
+              }}
             />
           </div>
 
@@ -151,38 +173,42 @@ export default function DataLogger() {
           </div>
         )}
 
-        {/* Tabla de datos */}
+        {/* Tabla de datos con scroll */}
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead>
-              {renderTableHeaders()}
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {renderTableRows()}
-            </tbody>
-          </table>
+          <div className="overflow-y-auto" style={{ maxHeight: '60vh' }}>
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead>
+                {renderTableHeaders()}
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {renderTableRows()}
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        {/* Paginación */}
-        <div className="mt-4 flex justify-between items-center">
-          <button
-            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-            disabled={currentPage === 1 || loading}
-            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50"
-          >
-            Anterior
-          </button>
-          <span className="text-gray-600">
-            Página {currentPage} de {totalPages}
-          </span>
-          <button
-            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-            disabled={currentPage === totalPages || loading}
-            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50"
-          >
-            Siguiente
-          </button>
-        </div>
+        {/* Paginación (solo para tablas de segundos) */}
+        {!isMinutesTable && (
+          <div className="mt-4 flex justify-between items-center">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1 || loading}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50"
+            >
+              Anterior
+            </button>
+            <span className="text-gray-600">
+              Página {currentPage} de {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages || loading}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50"
+            >
+              Siguiente
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

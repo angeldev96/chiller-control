@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Power, ThermometerSnowflake } from 'lucide-react';
-import { Routes, Route, Link, useLocation } from 'react-router';
+import { Routes, Route } from 'react-router';
 import './App.css';
 import DataLogger from './components/DataLogger';
 
@@ -8,37 +8,6 @@ import DataLogger from './components/DataLogger';
 const DOMAIN = 'cisa.arrayanhn.com';
 const PORT = '3001';
 const API_BASE_URL = `http://${DOMAIN}:${PORT}/api`;
-
-// Navbar component
-const Navbar = () => {
-  const location = useLocation();
-  
-  return (
-    <nav className="fixed top-0 left-0 right-0 bg-white shadow-md z-50">
-      <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-        <span className="text-xl font-bold text-blue-700">Chiller App</span>
-        <div className="flex gap-4">
-          <Link
-            to="/"
-            className={`px-3 py-1 rounded transition font-medium ${
-              location.pathname === '/' ? 'bg-blue-600 text-white' : 'text-blue-700 hover:bg-blue-100'
-            }`}
-          >
-            Chiller Control
-          </Link>
-          <Link
-            to="/data_logger"
-            className={`px-3 py-1 rounded transition font-medium ${
-              location.pathname === '/data_logger' ? 'bg-blue-600 text-white' : 'text-blue-700 hover:bg-blue-100'
-            }`}
-          >
-            Data Logger
-          </Link>
-        </div>
-      </div>
-    </nav>
-  );
-};
 
 // Chiller Control Component
 const ChillerControl = () => {
@@ -168,8 +137,7 @@ const ChillerControl = () => {
 export default function App() {
   return (
     <div className="min-h-screen bg-gray-100">
-      <Navbar />
-      <div className="pt-16 min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <Routes>
           <Route path="/" element={<ChillerControl />} />
           <Route path="/data_logger" element={<DataLogger />} />

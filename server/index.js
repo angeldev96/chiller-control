@@ -267,7 +267,7 @@ app.get('/api/chiller/test_modbus_direction', async (req, res) => {
 app.get('/api/chiller/data/:table', async (req, res) => {
     try {
         const { table } = req.params;
-        const { limit = 100, date } = req.query;
+        const { date } = req.query;
         
         // Validar que la tabla sea una de las permitidas
         const allowedTables = ['chiller_agua_minutos', 'chiller_agua_segundos', 
@@ -287,15 +287,39 @@ app.get('/api/chiller/data/:table', async (req, res) => {
             params.push(date);
         }
 
-        query += ' ORDER BY fecha_hora DESC LIMIT ?';
-        params.push(parseInt(limit));
+        // Para tablas de segundos, mostrar los últimos 1000 registros
+        // Para tablas de minutos con fecha, mostrar todos los registros del día
+        const isMinutesTable = table.includes('minutos');
+        if (!isMinutesTable) {
+            query += ' ORDER BY fecha_hora DESC LIMIT 1000';
+        } else if (!date) {
+            // Si es tabla de minutos pero no hay fecha, mostrar los últimos 100
+            query += ' ORDER BY fecha_hora DESC LIMIT 100';
+        } else {
+            query += ' ORDER BY fecha_hora DESC';
+        }
 
         const [rows] = await db.pool.query(query, params);
         const [totalRows] = await db.pool.query(`SELECT COUNT(*) as total FROM ${table}`);
 
+        // Format date consistently in the response
+        const formattedRows = rows.map(row => {
+            if (row.fecha_hora) {
+                // Format date as YYYY-MM-DD HH:MM:SS
+                const fecha = row.fecha_hora;
+                const formattedDate = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')} ${String(fecha.getHours()).padStart(2, '0')}:${String(fecha.getMinutes()).padStart(2, '0')}:${String(fecha.getSeconds()).padStart(2, '0')}`;
+                
+                return {
+                    ...row,
+                    fecha_hora: formattedDate
+                };
+            }
+            return row;
+        });
+
         res.json({ 
             success: true, 
-            data: rows,
+            data: formattedRows,
             total: totalRows[0].total
         });
     } catch (error) {
@@ -329,7 +353,23 @@ app.get('/api/chiller/data/:table/range', async (req, res) => {
         }
 
         const data = await db.getRecordsByDateRange(table, startDate, endDate);
-        res.json({ success: true, data });
+        
+        // Format date consistently in the response
+        const formattedData = data.map(row => {
+            if (row.fecha_hora) {
+                // Format date as YYYY-MM-DD HH:MM:SS
+                const fecha = row.fecha_hora;
+                const formattedDate = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')} ${String(fecha.getHours()).padStart(2, '0')}:${String(fecha.getMinutes()).padStart(2, '0')}:${String(fecha.getSeconds()).padStart(2, '0')}`;
+                
+                return {
+                    ...row,
+                    fecha_hora: formattedDate
+                };
+            }
+            return row;
+        });
+        
+        res.json({ success: true, data: formattedData });
     } catch (error) {
         console.error('Error al obtener datos por rango:', error);
         res.status(500).json({ 
@@ -352,6 +392,13 @@ app.get('/api/chiller/data/:table/last', async (req, res) => {
         }
 
         const data = await db.getLastRecord(table);
+        
+        // Format date consistently in the response
+        if (data && data.fecha_hora) {
+            const fecha = data.fecha_hora;
+            data.fecha_hora = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')} ${String(fecha.getHours()).padStart(2, '0')}:${String(fecha.getMinutes()).padStart(2, '0')}:${String(fecha.getSeconds()).padStart(2, '0')}`;
+        }
+        
         res.json({ success: true, data });
     } catch (error) {
         console.error('Error al obtener último registro:', error);

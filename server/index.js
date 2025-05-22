@@ -479,6 +479,26 @@ app.get('/api/chiller/export/:table', async (req, res) => {
     }
 });
 
+app.get('/api/chiller/uptime', async (req, res) => {
+  const { date } = req.query;
+  
+  try {
+    const query = `
+      SELECT
+        SUM(status_air) AS total_segundos_encendido_air,
+        SUM(status_vdf_pump_process) AS total_segundos_encendido_pump
+      FROM chiller_aire_segundos
+      WHERE DATE(fecha_hora) = ?
+    `;
+    
+    const [results] = await db.pool.query(query, [date]);
+    res.json(results[0]);
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ error: 'Error al obtener los datos de tiempo de encendido' });
+  }
+});
+
 const PORT = 3001;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor HTTP corriendo en puerto ${PORT} y accesible desde la red`);

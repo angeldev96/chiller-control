@@ -29,6 +29,12 @@ export default function DataLogger() {
   const [totalPages, setTotalPages] = useState(1);
   const [dateFilter, setDateFilter] = useState('');
   const [exporting, setExporting] = useState(false);
+  // Nuevos estados para el tiempo de encendido
+  const [sensorUptime, setSensorUptime] = useState({
+    air: { hours: 0, minutes: 0, seconds: 0 },
+    pump: { hours: 0, minutes: 0, seconds: 0 },
+    water: { hours: 0, minutes: 0, seconds: 0 }
+  });
 
   const isMinutesTable = selectedOption.includes('minutos');
 
@@ -41,7 +47,7 @@ export default function DataLogger() {
     setLoading(true);
     setError(null);
     try {
-      let url = `http://localhost:3001/api/chiller/data/${selectedOption}?date=${dateFilter}`;
+      let url = `http://cisa.arrayanhn.com:3001/api/chiller/data/${selectedOption}?date=${dateFilter}`;
       
       const response = await axios.get(url);
       setData(response.data.data || []);
@@ -59,7 +65,7 @@ export default function DataLogger() {
     setExporting(true);
     try {
       const response = await axios.get(
-        `http://localhost:3001/api/chiller/export/${selectedOption}?date=${dateFilter}`,
+        `http://cisa.arrayanhn.com:3001/api/chiller/export/${selectedOption}?date=${dateFilter}`,
         { responseType: 'blob' }
       );
 
@@ -80,8 +86,59 @@ export default function DataLogger() {
     }
   };
 
+  const fetchSensorUptime = async () => {
+    if (!dateFilter) return;
+
+    try {
+      const response = await axios.get(
+        `http://cisa.arrayanhn.com:3001/api/chiller/uptime?date=${dateFilter}&table=${selectedOption}`
+      );
+      
+      if (response.data) {
+        const newUptime = {
+          air: { hours: 0, minutes: 0, seconds: 0 },
+          pump: { hours: 0, minutes: 0, seconds: 0 },
+          water: { hours: 0, minutes: 0, seconds: 0 }
+        };
+
+        if (selectedOption === 'chiller_aire_segundos') {
+          // Calcular tiempo para status_air
+          const airSeconds = response.data.total_segundos_encendido_air || 0;
+          newUptime.air = {
+            hours: Math.floor(airSeconds / 3600),
+            minutes: Math.floor((airSeconds % 3600) / 60),
+            seconds: airSeconds % 60
+          };
+
+          // Calcular tiempo para status_vdf_pump_process
+          const pumpSeconds = response.data.total_segundos_encendido_pump || 0;
+          newUptime.pump = {
+            hours: Math.floor(pumpSeconds / 3600),
+            minutes: Math.floor((pumpSeconds % 3600) / 60),
+            seconds: pumpSeconds % 60
+          };
+        } else if (selectedOption === 'chiller_agua_segundos') {
+          // Calcular tiempo para status_water
+          const waterSeconds = response.data.total_segundos_encendido_water || 0;
+          newUptime.water = {
+            hours: Math.floor(waterSeconds / 3600),
+            minutes: Math.floor((waterSeconds % 3600) / 60),
+            seconds: waterSeconds % 60
+          };
+        }
+
+        setSensorUptime(newUptime);
+      }
+    } catch (err) {
+      console.error('Error al obtener tiempo de encendido:', err);
+    }
+  };
+
   useEffect(() => {
     fetchData();
+    if (selectedOption === 'chiller_aire_segundos' || selectedOption === 'chiller_agua_segundos') {
+      fetchSensorUptime();
+    }
   }, [selectedOption, dateFilter]);
 
   const formatDateTime = (dateStr) => {
@@ -93,15 +150,38 @@ export default function DataLogger() {
     }
   };
 
+  const formatHeaderText = (text) => {
+    // Reemplazar guiones bajos con espacios y convertir a mayúsculas
+    const words = text.replace(/_/g, ' ').toUpperCase().split(' ');
+    
+    if (words.length <= 2) return words.join(' ');
+    
+    // Para "PRESION ENTRADA COMPRESOR PSI" -> "PRESION ENTRADA\nCOMPRESOR PSI"
+    // Para "TEMP ENTRADA EVAPORADOR C" -> "TEMP ENTRADA\nEVAPORADOR C"
+    const midPoint = Math.ceil(words.length / 2);
+    const firstLine = words.slice(0, midPoint).join(' ');
+    const secondLine = words.slice(midPoint).join(' ');
+    
+    return (
+      <>
+        <div>{firstLine}</div>
+        <div>{secondLine}</div>
+      </>
+    );
+  };
+
   const renderTableHeaders = () => {
     if (data.length === 0) return null;
     const headers = Object.keys(data[0])
       .filter(key => key !== 'id' && key !== 'chiller_id');
     return (
-      <tr className="bg-gray-100">
+      <tr>
         {headers.map(header => (
-          <th key={header} className="px-4 py-2 text-left sticky top-0 bg-gray-100 z-10">
-            {header.replace(/_/g, ' ').toUpperCase()}
+          <th 
+            key={header} 
+            className="px-6 py-2 text-center sticky top-0 bg-gradient-to-b from-blue-600 to-blue-700 text-white font-semibold text-xs uppercase tracking-wider"
+          >
+            {formatHeaderText(header)}
           </th>
         ))}
       </tr>
@@ -110,19 +190,29 @@ export default function DataLogger() {
 
   const renderTableRows = () => {
     return data.map((row, index) => (
-      <tr key={row.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+      <tr 
+        key={row.id} 
+        className={`
+          border-b border-gray-200 hover:bg-blue-50 transition-colors
+          ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
+        `}
+      >
         {Object.entries(row).map(([key, value]) => {
           if (key === 'id' || key === 'chiller_id') return null;
-          if (key === 'fecha_hora') {
-            return (
-              <td key={key} className="px-4 py-2">
-                {formatDateTime(value)}
-              </td>
-            );
-          }
+          
+          // Determinar si es un valor numérico (excepto fecha_hora)
+          const isNumeric = key !== 'fecha_hora' && !isNaN(value);
+          
           return (
-            <td key={key} className="px-4 py-2">
-              {value}
+            <td 
+              key={key} 
+              className={`px-6 py-2 whitespace-nowrap ${
+                isNumeric 
+                  ? 'text-center font-mono text-gray-700' 
+                  : 'text-center text-gray-800'
+              }`}
+            >
+              {key === 'fecha_hora' ? formatDateTime(value) : value}
             </td>
           );
         })}
@@ -190,6 +280,40 @@ export default function DataLogger() {
           </div>
         </div>
 
+        {/* Sección de tiempo de encendido */}
+        {(selectedOption === 'chiller_aire_segundos' || selectedOption === 'chiller_agua_segundos') && dateFilter && (
+          <div className="p-4 bg-white border-b">
+            <div className="flex items-center gap-8">
+              <h3 className="text-lg font-semibold">Tiempo de Encendido:</h3>
+              <div className="flex gap-6">
+                {selectedOption === 'chiller_aire_segundos' ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-600">Status Air:</span>
+                      <span className="font-semibold text-blue-600">
+                        {`${sensorUptime.air.hours}h ${sensorUptime.air.minutes}m ${sensorUptime.air.seconds}s`}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-600">Status VDF Pump:</span>
+                      <span className="font-semibold text-green-600">
+                        {`${sensorUptime.pump.hours}h ${sensorUptime.pump.minutes}m ${sensorUptime.pump.seconds}s`}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-600">Status Water:</span>
+                    <span className="font-semibold text-blue-600">
+                      {`${sensorUptime.water.hours}h ${sensorUptime.water.minutes}m ${sensorUptime.water.seconds}s`}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Mensaje cuando no hay fecha seleccionada */}
         {!dateFilter && (
           <div className="flex-1 flex items-center justify-center text-gray-500">
@@ -208,11 +332,11 @@ export default function DataLogger() {
         {dateFilter && (
           <div className="flex-1 overflow-hidden">
             <div className="h-full overflow-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="sticky top-0">
+              <table className="min-w-full divide-y divide-gray-200 table-fixed">
+                <thead className="sticky top-0 z-10">
                   {renderTableHeaders()}
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="divide-y divide-gray-200 bg-white">
                   {renderTableRows()}
                 </tbody>
               </table>

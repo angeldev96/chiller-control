@@ -95,7 +95,8 @@ export default function DataLogger() {
 
   const renderTableHeaders = () => {
     if (data.length === 0) return null;
-    const headers = Object.keys(data[0]).filter(key => key !== 'id');
+    const headers = Object.keys(data[0])
+      .filter(key => key !== 'id' && key !== 'chiller_id');
     return (
       <tr className="bg-gray-100">
         {headers.map(header => (
@@ -111,7 +112,7 @@ export default function DataLogger() {
     return data.map((row, index) => (
       <tr key={row.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
         {Object.entries(row).map(([key, value]) => {
-          if (key === 'id') return null;
+          if (key === 'id' || key === 'chiller_id') return null;
           if (key === 'fecha_hora') {
             return (
               <td key={key} className="px-4 py-2">
@@ -130,10 +131,10 @@ export default function DataLogger() {
   };
 
   return (
-    <div className="w-screen min-h-screen bg-gray-100 p-6">
-      <div className="bg-white shadow-lg rounded-lg p-6">
+    <div className="w-screen h-screen bg-gray-100 flex flex-col">
+      <div className="bg-white shadow-lg rounded-lg m-2 flex-1 flex flex-col overflow-hidden">
         {/* Controles superiores */}
-        <div className="flex flex-wrap gap-4 mb-6">
+        <div className="flex flex-wrap gap-4 p-4 bg-white border-b">
           {/* Selector de base de datos */}
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -191,24 +192,24 @@ export default function DataLogger() {
 
         {/* Mensaje cuando no hay fecha seleccionada */}
         {!dateFilter && (
-          <div className="text-center p-8 text-gray-500">
+          <div className="flex-1 flex items-center justify-center text-gray-500">
             Por favor, seleccione una fecha para ver los registros
           </div>
         )}
 
         {/* Mensaje de error */}
         {error && (
-          <div className="mb-4 p-4 bg-red-100 text-red-700 rounded-md">
+          <div className="m-2 p-4 bg-red-100 text-red-700 rounded-md">
             {error}
           </div>
         )}
 
         {/* Tabla de datos con scroll */}
         {dateFilter && (
-          <div className="overflow-x-auto">
-            <div className="overflow-y-auto" style={{ maxHeight: '60vh' }}>
+          <div className="flex-1 overflow-hidden">
+            <div className="h-full overflow-auto">
               <table className="min-w-full divide-y divide-gray-200">
-                <thead>
+                <thead className="sticky top-0">
                   {renderTableHeaders()}
                 </thead>
                 <tbody className="divide-y divide-gray-200">

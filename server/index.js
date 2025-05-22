@@ -424,44 +424,93 @@ app.get('/api/chiller/export/:table', async (req, res) => {
             });
         }
 
-        // Solo permitir exportación de tablas de minutos por ahora
-        const allowedTables = ['chiller_aire_minutos', 'chiller_agua_minutos'];
+        // Permitir exportación de todas las tablas
+        const allowedTables = [
+            'chiller_aire_minutos', 
+            'chiller_agua_minutos',
+            'chiller_aire_segundos',
+            'chiller_agua_segundos'
+        ];
+        
         if (!allowedTables.includes(table)) {
             return res.status(400).json({
                 success: false,
-                message: 'Solo se pueden exportar tablas de minutos'
+                message: 'Tabla no válida para exportación'
             });
         }
 
         // Consultar los datos
-        let query = `SELECT * FROM ${table} WHERE DATE(fecha_hora) = ? ORDER BY fecha_hora DESC`;
+        let query = `SELECT * FROM ${table} WHERE DATE(fecha_hora) = ? ORDER BY fecha_hora ASC`;
         const [rows] = await db.pool.query(query, [date]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'No hay datos para exportar en la fecha seleccionada'
+            });
+        }
 
         // Formatear los datos para Excel
         const formattedData = rows.map(row => {
             const fecha = row.fecha_hora;
-            return {
-                ...row,
-                fecha_hora: `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')} ${String(fecha.getHours()).padStart(2, '0')}:${String(fecha.getMinutes()).padStart(2, '0')}:${String(fecha.getSeconds()).padStart(2, '0')}`
-            };
+            const formattedRow = {};
+
+            // Formatear la fecha para que Excel la reconozca como datetime
+            formattedRow['Fecha y Hora'] = fecha; // Excel reconocerá automáticamente el objeto Date
+
+            // Copiar y renombrar las columnas restantes, excluyendo id y chiller_id
+            for (const [key, value] of Object.entries(row)) {
+                if (key !== 'id' && key !== 'chiller_id' && key !== 'fecha_hora') {
+                    // Formatear el nombre de la columna para mejor legibilidad
+                    const formattedKey = key
+                        .split('_')
+                        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                        .join(' ');
+                    formattedRow[formattedKey] = value;
+                }
+            }
+
+            return formattedRow;
         });
 
         // Crear el libro de Excel
         const wb = XLSX.utils.book_new();
-        const ws = XLSX.utils.json_to_sheet(formattedData);
+        
+        // Configurar las opciones de la hoja
+        const ws = XLSX.utils.json_to_sheet(formattedData, {
+            dateNF: 'dd/mm/yyyy hh:mm:ss' // Formato de fecha personalizado
+        });
 
-        // Ajustar el ancho de las columnas
+        // Ajustar el ancho de las columnas basado en el contenido
         const colWidths = [];
-        for (let i = 0; i < Object.keys(formattedData[0] || {}).length; i++) {
-            colWidths.push({ wch: 15 }); // width = 15 characters
-        }
+        const headers = Object.keys(formattedData[0] || {});
+        
+        headers.forEach((header) => {
+            const maxWidth = Math.max(
+                header.length,
+                ...formattedData.map(row => {
+                    const value = row[header];
+                    return value instanceof Date 
+                        ? 20  // Ancho fijo para fechas
+                        : String(value).length;
+                })
+            );
+            colWidths.push({ wch: Math.min(maxWidth + 2, 20) }); // max width 20 characters
+        });
         ws['!cols'] = colWidths;
 
-        // Añadir la hoja al libro
-        XLSX.utils.book_append_sheet(wb, ws, `Datos ${date}`);
+        // Añadir la hoja al libro con nombre descriptivo
+        const sheetName = `Datos ${date} ${table.includes('segundos') ? '(seg)' : '(min)'}`;
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
-        // Generar el buffer del archivo
-        const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+        // Generar el buffer del archivo con configuración específica para fechas
+        const excelBuffer = XLSX.write(wb, { 
+            type: 'buffer', 
+            bookType: 'xlsx',
+            compression: true,
+            cellDates: true, // Mantener las fechas como fechas
+            dateNF: 'dd/mm/yyyy hh:mm:ss' // Formato de fecha para todo el libro
+        });
 
         // Configurar headers para la descarga
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

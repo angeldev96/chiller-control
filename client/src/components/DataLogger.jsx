@@ -60,7 +60,7 @@ export default function DataLogger() {
   };
 
   const handleExport = async () => {
-    if (!dateFilter || !isMinutesTable) return;
+    if (!dateFilter) return;
 
     setExporting(true);
     try {
@@ -268,15 +268,13 @@ export default function DataLogger() {
               {loading ? 'Cargando...' : 'Actualizar'}
             </button>
 
-            {isMinutesTable && (
-              <button
-                onClick={handleExport}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-400"
-                disabled={exporting || !dateFilter || data.length === 0}
-              >
-                {exporting ? 'Exportando...' : 'Exportar Excel'}
-              </button>
-            )}
+            <button
+              onClick={handleExport}
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-400"
+              disabled={exporting || !dateFilter || data.length === 0}
+            >
+              {exporting ? 'Exportando...' : 'Exportar Excel'}
+            </button>
           </div>
         </div>
 

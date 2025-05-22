@@ -28,35 +28,23 @@ export default function DataLogger() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [dateFilter, setDateFilter] = useState('');
+  const [exporting, setExporting] = useState(false);
 
   const isMinutesTable = selectedOption.includes('minutos');
 
   const fetchData = async () => {
+    if (!dateFilter) {
+      setData([]);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
-      let url = `http://localhost:3001/api/chiller/data/${selectedOption}`;
-      
-      // Para tablas de minutos, no usamos paginación y traemos todos los datos del día
-      if (isMinutesTable) {
-        if (dateFilter) {
-          url += `?date=${dateFilter}`;
-        }
-      } else {
-        // Para tablas de segundos, mantenemos la paginación
-        url += `?limit=${ITEMS_PER_PAGE}`;
-        if (dateFilter) {
-          url += `&date=${dateFilter}`;
-        }
-      }
+      let url = `http://localhost:3001/api/chiller/data/${selectedOption}?date=${dateFilter}`;
       
       const response = await axios.get(url);
       setData(response.data.data || []);
-      
-      // Solo calculamos páginas totales para tablas de segundos
-      if (!isMinutesTable) {
-        setTotalPages(Math.ceil((response.data.total || 0) / ITEMS_PER_PAGE));
-      }
     } catch (err) {
       setError('Error al cargar los datos');
       console.error('Error:', err);
@@ -65,9 +53,36 @@ export default function DataLogger() {
     }
   };
 
+  const handleExport = async () => {
+    if (!dateFilter || !isMinutesTable) return;
+
+    setExporting(true);
+    try {
+      const response = await axios.get(
+        `http://localhost:3001/api/chiller/export/${selectedOption}?date=${dateFilter}`,
+        { responseType: 'blob' }
+      );
+
+      // Crear URL del blob y link para descarga
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `chiller_data_${selectedOption}_${dateFilter}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError('Error al exportar los datos');
+      console.error('Error:', err);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   useEffect(() => {
     fetchData();
-  }, [selectedOption, currentPage, dateFilter]);
+  }, [selectedOption, dateFilter]);
 
   const formatDateTime = (dateStr) => {
     try {
@@ -129,7 +144,6 @@ export default function DataLogger() {
               value={selectedOption}
               onChange={e => {
                 setSelectedOption(e.target.value);
-                setCurrentPage(1); // Reset page when changing database
               }}
             >
               {opciones.map(opt => (
@@ -141,7 +155,7 @@ export default function DataLogger() {
           {/* Filtro de fecha */}
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Filtrar por fecha:
+              Seleccionar fecha:
             </label>
             <input
               type="date"
@@ -149,22 +163,38 @@ export default function DataLogger() {
               value={dateFilter}
               onChange={e => {
                 setDateFilter(e.target.value);
-                setCurrentPage(1); // Reset page when changing date
               }}
             />
           </div>
 
-          {/* Botón de actualizar */}
-          <div className="flex items-end">
+          {/* Botones de acciones */}
+          <div className="flex items-end gap-2">
             <button
               onClick={fetchData}
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={loading}
+              disabled={loading || !dateFilter}
             >
               {loading ? 'Cargando...' : 'Actualizar'}
             </button>
+
+            {isMinutesTable && (
+              <button
+                onClick={handleExport}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-400"
+                disabled={exporting || !dateFilter || data.length === 0}
+              >
+                {exporting ? 'Exportando...' : 'Exportar Excel'}
+              </button>
+            )}
           </div>
         </div>
+
+        {/* Mensaje cuando no hay fecha seleccionada */}
+        {!dateFilter && (
+          <div className="text-center p-8 text-gray-500">
+            Por favor, seleccione una fecha para ver los registros
+          </div>
+        )}
 
         {/* Mensaje de error */}
         {error && (
@@ -174,39 +204,18 @@ export default function DataLogger() {
         )}
 
         {/* Tabla de datos con scroll */}
-        <div className="overflow-x-auto">
-          <div className="overflow-y-auto" style={{ maxHeight: '60vh' }}>
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead>
-                {renderTableHeaders()}
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {renderTableRows()}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Paginación (solo para tablas de segundos) */}
-        {!isMinutesTable && (
-          <div className="mt-4 flex justify-between items-center">
-            <button
-              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-              disabled={currentPage === 1 || loading}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50"
-            >
-              Anterior
-            </button>
-            <span className="text-gray-600">
-              Página {currentPage} de {totalPages}
-            </span>
-            <button
-              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-              disabled={currentPage === totalPages || loading}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50"
-            >
-              Siguiente
-            </button>
+        {dateFilter && (
+          <div className="overflow-x-auto">
+            <div className="overflow-y-auto" style={{ maxHeight: '60vh' }}>
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead>
+                  {renderTableHeaders()}
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {renderTableRows()}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

@@ -466,7 +466,18 @@ app.get('/api/chiller/export/:table', async (req, res) => {
                         .split('_')
                         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
                         .join(' ');
-                    formattedRow[formattedKey] = value;
+                    
+                    // Asegurar que los valores numéricos se mantengan como números
+                    let processedValue = value;
+                    if (value !== null && value !== undefined && value !== '') {
+                        // Intentar convertir a número si es posible
+                        const numericValue = Number(value);
+                        if (!isNaN(numericValue) && isFinite(numericValue)) {
+                            processedValue = numericValue;
+                        }
+                    }
+                    
+                    formattedRow[formattedKey] = processedValue;
                 }
             }
 
@@ -480,6 +491,36 @@ app.get('/api/chiller/export/:table', async (req, res) => {
         const ws = XLSX.utils.json_to_sheet(formattedData, {
             dateNF: 'dd/mm/yyyy hh:mm:ss' // Formato de fecha personalizado
         });
+
+        // Configurar tipos de celda para asegurar que los números se mantengan como números
+        const range = XLSX.utils.decode_range(ws['!ref']);
+        for (let R = range.s.r + 1; R <= range.e.r; ++R) { // Empezar desde la fila 1 (saltando headers)
+            for (let C = range.s.c; C <= range.e.c; ++C) {
+                const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+                const cell = ws[cellAddress];
+                
+                if (cell && cell.v !== null && cell.v !== undefined) {
+                    // Si es la primera columna (Fecha y Hora), mantener como fecha
+                    if (C === 0) {
+                        cell.t = 'd'; // Tipo fecha
+                        cell.z = 'dd/mm/yyyy hh:mm:ss';
+                    } else {
+                        // Para otras columnas, verificar si es numérico
+                        const numericValue = Number(cell.v);
+                        if (!isNaN(numericValue) && isFinite(numericValue)) {
+                            cell.t = 'n'; // Tipo numérico
+                            cell.v = numericValue;
+                            // Aplicar formato numérico con decimales si es necesario
+                            if (numericValue % 1 !== 0) {
+                                cell.z = '0.00'; // Formato con 2 decimales
+                            } else {
+                                cell.z = '0'; // Formato entero
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Ajustar el ancho de las columnas basado en el contenido
         const colWidths = [];

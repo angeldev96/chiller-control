@@ -368,7 +368,7 @@ export default function DataLogger() {
 
                   {/* Horómetro bomba de proceso */}
                   <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-green-500">
-                    <h4 className="text-lg font-semibold text-green-700 mb-3">Horómetro bomba de proceso</h4>
+                    <h4 className="text-lg font-semibold text-green-700 mb-3">Bomba de proceso (STATUS VDF) </h4>
                     <div className="space-y-2">
                       <div className="text-sm text-gray-600">Tiempo encendido:</div>
                       <div className="space-y-1">

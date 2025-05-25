@@ -569,6 +569,43 @@ app.get('/api/chiller/export/:table', async (req, res) => {
     }
 });
 
+// Endpoint para obtener promedios de temperatura diarios de evaporadores
+app.get('/api/chiller/temperature-averages/:table', async (req, res) => {
+    try {
+        const { table } = req.params;
+        const { date } = req.query;
+
+        if (!date) {
+            return res.status(400).json({
+                success: false,
+                message: 'Se requiere una fecha para calcular promedios'
+            });
+        }
+
+        // Validar que la tabla sea de minutos y válida para promedios de temperatura
+        const allowedTables = ['chiller_aire_minutos', 'chiller_agua_minutos'];
+        if (!allowedTables.includes(table)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Tabla no válida para promedios de temperatura. Solo se permiten tablas de minutos.'
+            });
+        }
+
+        const temperatureData = await db.getDailyTemperatureAverages(table, date);
+        
+        res.json({ 
+            success: true, 
+            data: temperatureData 
+        });
+    } catch (error) {
+        console.error('Error al obtener promedios de temperatura:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al calcular los promedios de temperatura del día'
+        });
+    }
+});
+
 app.get('/api/chiller/uptime', async (req, res) => {
   const { date } = req.query;
   

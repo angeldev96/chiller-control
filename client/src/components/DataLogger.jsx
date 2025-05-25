@@ -35,6 +35,14 @@ export default function DataLogger() {
     pump: { hours: 0, minutes: 0, seconds: 0 },
     water: { hours: 0, minutes: 0, seconds: 0 }
   });
+  // Estado para promedios de temperatura
+  const [temperatureAverages, setTemperatureAverages] = useState({
+    avg_temp_entrada: null,
+    avg_temp_salida: null,
+    total_records: 0,
+    date: null,
+    table: null
+  });
 
   const isMinutesTable = selectedOption.includes('minutos');
 
@@ -134,10 +142,37 @@ export default function DataLogger() {
     }
   };
 
+  const fetchTemperatureAverages = async () => {
+    if (!dateFilter) return;
+
+    try {
+      const response = await axios.get(
+        `http://cisa.arrayanhn.com:3001/api/chiller/temperature-averages/${selectedOption}?date=${dateFilter}`
+      );
+      
+      if (response.data && response.data.success) {
+        setTemperatureAverages(response.data.data);
+      }
+    } catch (err) {
+      console.error('Error al obtener promedios de temperatura:', err);
+      // Reset temperature averages on error
+      setTemperatureAverages({
+        avg_temp_entrada: null,
+        avg_temp_salida: null,
+        total_records: 0,
+        date: null,
+        table: null
+      });
+    }
+  };
+
   useEffect(() => {
     fetchData();
     if (selectedOption === 'chiller_aire_segundos' || selectedOption === 'chiller_agua_segundos') {
       fetchSensorUptime();
+    }
+    if (selectedOption === 'chiller_aire_minutos' || selectedOption === 'chiller_agua_minutos') {
+      fetchTemperatureAverages();
     }
   }, [selectedOption, dateFilter]);
 
@@ -146,6 +181,30 @@ export default function DataLogger() {
       return dayjs(dateStr).format('DD/MM/YYYY HH:mm:ss');
     } catch (error) {
       console.error('Error al formatear fecha:', error);
+      return dateStr;
+    }
+  };
+
+  // Función para formatear el tiempo de encendido en el nuevo formato
+  const formatUptimeDisplay = (uptimeObj) => {
+    const totalSeconds = uptimeObj.hours * 3600 + uptimeObj.minutes * 60 + uptimeObj.seconds;
+    const totalMinutes = totalSeconds / 60;
+    const totalHours = totalSeconds / 3600;
+    
+    return {
+      hours: totalHours.toFixed(3),
+      minutes: totalMinutes.toFixed(2),
+      seconds: totalSeconds,
+      formatted: `${uptimeObj.hours}h ${uptimeObj.minutes}m ${uptimeObj.seconds}s`
+    };
+  };
+
+  // Función para formatear la fecha en formato DD/M/YYYY
+  const formatDisplayDate = (dateStr) => {
+    try {
+      return dayjs(dateStr).format('D/M/YYYY');
+    } catch (error) {
+      console.error('Error al formatear fecha para mostrar:', error);
       return dateStr;
     }
   };
@@ -280,33 +339,107 @@ export default function DataLogger() {
 
         {/* Sección de tiempo de encendido */}
         {(selectedOption === 'chiller_aire_segundos' || selectedOption === 'chiller_agua_segundos') && dateFilter && (
-          <div className="p-4 bg-white border-b">
-            <div className="flex items-center gap-8">
-              <h3 className="text-lg font-semibold">Tiempo de Encendido:</h3>
-              <div className="flex gap-6">
-                {selectedOption === 'chiller_aire_segundos' ? (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-600">Status Air:</span>
-                      <span className="font-semibold text-blue-600">
-                        {`${sensorUptime.air.hours}h ${sensorUptime.air.minutes}m ${sensorUptime.air.seconds}s`}
-                      </span>
+          <div className="p-6 bg-gradient-to-r from-blue-50 to-green-50 border-b">
+            <h3 className="text-xl font-bold text-gray-800 mb-4">Tiempo de Encendido</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {selectedOption === 'chiller_aire_segundos' ? (
+                <>
+                  {/* Chiller enfriado por aire */}
+                  <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-blue-500">
+                    <h4 className="text-lg font-semibold text-blue-700 mb-3">Chiller enfriado por aire</h4>
+                    <div className="space-y-2">
+                      <div className="text-sm text-gray-600">Tiempo encendido:</div>
+                      <div className="space-y-1">
+                        <div className="text-lg font-bold text-blue-600">
+                          {formatUptimeDisplay(sensorUptime.air).hours} Horas
+                        </div>
+                        <div className="text-md font-semibold text-blue-500">
+                          {formatUptimeDisplay(sensorUptime.air).minutes} minutos
+                        </div>
+                        <div className="text-sm font-medium text-blue-400">
+                          {formatUptimeDisplay(sensorUptime.air).seconds} segundos
+                        </div>
+                        <div className="text-xs text-gray-500 mt-2">
+                          ({formatUptimeDisplay(sensorUptime.air).formatted})
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-600">Status VDF Pump:</span>
-                      <span className="font-semibold text-green-600">
-                        {`${sensorUptime.pump.hours}h ${sensorUptime.pump.minutes}m ${sensorUptime.pump.seconds}s`}
-                      </span>
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-600">Status Water:</span>
-                    <span className="font-semibold text-blue-600">
-                      {`${sensorUptime.water.hours}h ${sensorUptime.water.minutes}m ${sensorUptime.water.seconds}s`}
-                    </span>
                   </div>
-                )}
+
+                  {/* Horómetro bomba de proceso */}
+                  <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-green-500">
+                    <h4 className="text-lg font-semibold text-green-700 mb-3">Horómetro bomba de proceso</h4>
+                    <div className="space-y-2">
+                      <div className="text-sm text-gray-600">Tiempo encendido:</div>
+                      <div className="space-y-1">
+                        <div className="text-lg font-bold text-green-600">
+                          {formatUptimeDisplay(sensorUptime.pump).hours} Horas
+                        </div>
+                        <div className="text-md font-semibold text-green-500">
+                          {formatUptimeDisplay(sensorUptime.pump).minutes} minutos
+                        </div>
+                        <div className="text-sm font-medium text-green-400">
+                          {formatUptimeDisplay(sensorUptime.pump).seconds} segundos
+                        </div>
+                        <div className="text-xs text-gray-500 mt-2">
+                          ({formatUptimeDisplay(sensorUptime.pump).formatted})
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* Chiller enfriado por agua */
+                <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-blue-500">
+                  <h4 className="text-lg font-semibold text-blue-700 mb-3">Chiller enfriado por agua</h4>
+                  <div className="space-y-2">
+                    <div className="text-sm text-gray-600">Tiempo encendido:</div>
+                    <div className="space-y-1">
+                      <div className="text-lg font-bold text-blue-600">
+                        {formatUptimeDisplay(sensorUptime.water).hours} Horas
+                      </div>
+                      <div className="text-md font-semibold text-blue-500">
+                        {formatUptimeDisplay(sensorUptime.water).minutes} minutos
+                      </div>
+                      <div className="text-sm font-medium text-blue-400">
+                        {formatUptimeDisplay(sensorUptime.water).seconds} segundos
+                      </div>
+                      <div className="text-xs text-gray-500 mt-2">
+                        ({formatUptimeDisplay(sensorUptime.water).formatted})
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Sección de promedios de temperatura */}
+        {(selectedOption === 'chiller_aire_minutos' || selectedOption === 'chiller_agua_minutos') && dateFilter && temperatureAverages.avg_temp_entrada !== null && (
+          <div className="p-6 bg-gradient-to-r from-orange-50 to-red-50 border-b">
+            <h3 className="text-xl font-bold text-gray-800 mb-4">Temperatura del Día</h3>
+            <div className="grid grid-cols-1 gap-6">
+              <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-orange-500">
+                <h4 className="text-lg font-semibold text-orange-700 mb-3">
+                  {selectedOption === 'chiller_aire_minutos' ? 'Chiller enfriado por aire' : 'Chiller enfriado por agua'}
+                </h4>
+                <div className="space-y-2">
+                  <div className="text-md text-gray-700 font-medium">
+                    Temperatura del día {formatDisplayDate(dateFilter)}:
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-lg font-semibold text-orange-600">
+                      Entrada al evaporador: {temperatureAverages.avg_temp_entrada}°C
+                    </div>
+                    <div className="text-lg font-semibold text-red-600">
+                      Salida del evaporador: {temperatureAverages.avg_temp_salida}°C
+                    </div>
+                    <div className="text-xs text-gray-500 mt-3">
+                      Basado en {temperatureAverages.total_records} registros del día
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

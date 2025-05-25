@@ -124,11 +124,59 @@ async function getStats(table, field, startDate, endDate) {
   }
 }
 
+// Función para obtener promedios de temperatura del día para evaporadores
+async function getDailyTemperatureAverages(table, date) {
+  try {
+    const connection = await pool.getConnection();
+    
+    // Determinar las columnas de temperatura según la tabla
+    let tempColumns = {};
+    if (table === 'chiller_aire_minutos') {
+      tempColumns = {
+        entrada: 'temp_entrada_evaporador_c',
+        salida: 'temp_salida_evaporador_c'
+      };
+    } else if (table === 'chiller_agua_minutos') {
+      tempColumns = {
+        entrada: 'temp_entrada_evaporador_c',
+        salida: 'temp_salida_evaporador_c'
+      };
+    } else {
+      throw new Error('Tabla no válida para promedios de temperatura');
+    }
+
+    const [rows] = await connection.query(
+      `SELECT 
+        AVG(${tempColumns.entrada}) as avg_temp_entrada,
+        AVG(${tempColumns.salida}) as avg_temp_salida,
+        COUNT(*) as total_records
+       FROM ${table}
+       WHERE DATE(fecha_hora) = ?`,
+      [date]
+    );
+    
+    connection.release();
+    
+    const result = rows[0];
+    return {
+      avg_temp_entrada: result.avg_temp_entrada ? parseFloat(result.avg_temp_entrada).toFixed(2) : null,
+      avg_temp_salida: result.avg_temp_salida ? parseFloat(result.avg_temp_salida).toFixed(2) : null,
+      total_records: result.total_records,
+      date: date,
+      table: table
+    };
+  } catch (error) {
+    console.error('Error al obtener promedios de temperatura:', error);
+    throw error;
+  }
+}
+
 module.exports = {
   pool,
   getLastRecords,
   getRecordsByDateRange,
   getLastRecord,
   getStats,
+  getDailyTemperatureAverages,
   testConnection
 }; 

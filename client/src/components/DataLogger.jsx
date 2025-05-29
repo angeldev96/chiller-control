@@ -43,6 +43,14 @@ export default function DataLogger() {
     date: null,
     table: null
   });
+  // Estado para estados de componentes
+  const [componentStatus, setComponentStatus] = useState({
+    compresor: 0,
+    ventilador: 0,
+    bomba_proceso: 0,
+    bomba_condensador: 0,
+    timestamp: null
+  });
 
   const isMinutesTable = selectedOption.includes('minutos');
 
@@ -166,10 +174,33 @@ export default function DataLogger() {
     }
   };
 
+  const fetchComponentStatus = async () => {
+    try {
+      const response = await axios.get(
+        `http://cisa.arrayanhn.com:3001/api/chiller/component-status/${selectedOption}`
+      );
+      
+      if (response.data && response.data.success) {
+        setComponentStatus(response.data.data);
+      }
+    } catch (err) {
+      console.error('Error al obtener estados de componentes:', err);
+      // Reset component status on error
+      setComponentStatus({
+        compresor: 0,
+        ventilador: 0,
+        bomba_proceso: 0,
+        bomba_condensador: 0,
+        timestamp: null
+      });
+    }
+  };
+
   useEffect(() => {
     fetchData();
     if (selectedOption === 'chiller_aire_segundos' || selectedOption === 'chiller_agua_segundos') {
       fetchSensorUptime();
+      fetchComponentStatus();
     }
     if (selectedOption === 'chiller_aire_minutos' || selectedOption === 'chiller_agua_minutos') {
       fetchTemperatureAverages();
@@ -207,6 +238,11 @@ export default function DataLogger() {
       console.error('Error al formatear fecha para mostrar:', error);
       return dateStr;
     }
+  };
+
+  // Función para formatear estado ON/OFF
+  const formatStatus = (status) => {
+    return status === 1 ? 'ON' : 'OFF';
   };
 
   const formatHeaderText = (text) => {
@@ -411,6 +447,71 @@ export default function DataLogger() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Sección de estados de componentes */}
+        {(selectedOption === 'chiller_aire_segundos' || selectedOption === 'chiller_agua_segundos') && componentStatus.timestamp && (
+          <div className="p-6 bg-gradient-to-r from-purple-50 to-indigo-50 border-b">
+            <h3 className="text-xl font-bold text-gray-800 mb-4">Estado Actual de Componentes</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {selectedOption === 'chiller_aire_segundos' ? (
+                <>
+                  {/* Compresor */}
+                  <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-purple-500">
+                    <h4 className="text-md font-semibold text-purple-700 mb-2">Compresor</h4>
+                    <div className={`text-lg font-bold ${componentStatus.compresor === 1 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatStatus(componentStatus.compresor)}
+                    </div>
+                  </div>
+
+                  {/* Ventilador */}
+                  <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-blue-500">
+                    <h4 className="text-md font-semibold text-blue-700 mb-2">Ventilador</h4>
+                    <div className={`text-lg font-bold ${componentStatus.ventilador === 1 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatStatus(componentStatus.ventilador)}
+                    </div>
+                  </div>
+
+                  {/* Bomba de proceso */}
+                  <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-green-500">
+                    <h4 className="text-md font-semibold text-green-700 mb-2">Bomba de proceso</h4>
+                    <div className={`text-lg font-bold ${componentStatus.bomba_proceso === 1 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatStatus(componentStatus.bomba_proceso)}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Compresor */}
+                  <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-purple-500">
+                    <h4 className="text-md font-semibold text-purple-700 mb-2">Compresor</h4>
+                    <div className={`text-lg font-bold ${componentStatus.compresor === 1 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatStatus(componentStatus.compresor)}
+                    </div>
+                  </div>
+
+                  {/* Bomba del condensador */}
+                  <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-blue-500">
+                    <h4 className="text-md font-semibold text-blue-700 mb-2">Bomba del condensador</h4>
+                    <div className={`text-lg font-bold ${componentStatus.bomba_condensador === 1 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatStatus(componentStatus.bomba_condensador)}
+                    </div>
+                  </div>
+
+                  {/* Bomba de proceso */}
+                  <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-green-500">
+                    <h4 className="text-md font-semibold text-green-700 mb-2">Bomba de proceso</h4>
+                    <div className={`text-lg font-bold ${componentStatus.bomba_proceso === 1 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatStatus(componentStatus.bomba_proceso)}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="text-xs text-gray-500 mt-4">
+              Última actualización: {componentStatus.timestamp ? formatDateTime(componentStatus.timestamp) : 'N/A'}
             </div>
           </div>
         )}

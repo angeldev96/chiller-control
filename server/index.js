@@ -606,6 +606,62 @@ app.get('/api/chiller/temperature-averages/:table', async (req, res) => {
     }
 });
 
+// Endpoint para obtener estados de componentes del chiller
+app.get('/api/chiller/component-status/:table', async (req, res) => {
+    try {
+        const { table } = req.params;
+        
+        // Validar que la tabla sea de segundos
+        const allowedTables = ['chiller_aire_segundos', 'chiller_agua_segundos'];
+        if (!allowedTables.includes(table)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Tabla no válida para estados de componentes. Solo se permiten tablas de segundos.'
+            });
+        }
+
+        // Obtener el último registro para mostrar el estado actual
+        const lastRecord = await db.getLastRecord(table);
+        
+        if (!lastRecord) {
+            return res.status(404).json({
+                success: false,
+                message: 'No se encontraron registros para esta tabla'
+            });
+        }
+
+        // Extraer los estados relevantes según la tabla
+        let componentStatus = {};
+        
+        if (table === 'chiller_aire_segundos') {
+            componentStatus = {
+                compresor: lastRecord.status_compresor || 0,
+                ventilador: lastRecord.status_bomba || 0, // Usando status_bomba como ventilador según el mapeo
+                bomba_proceso: lastRecord.status_vdf_pump_process || 0,
+                timestamp: lastRecord.fecha_hora
+            };
+        } else if (table === 'chiller_agua_segundos') {
+            componentStatus = {
+                compresor: lastRecord.status_compresor || 0,
+                bomba_condensador: lastRecord.status_bomba_agua || 0,
+                bomba_proceso: lastRecord.vdf_condensador_status || 0, // Usando vdf_condensador_status como bomba de proceso
+                timestamp: lastRecord.fecha_hora
+            };
+        }
+
+        res.json({ 
+            success: true, 
+            data: componentStatus 
+        });
+    } catch (error) {
+        console.error('Error al obtener estados de componentes:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al obtener los estados de los componentes del chiller'
+        });
+    }
+});
+
 app.get('/api/chiller/uptime', async (req, res) => {
   const { date } = req.query;
   
@@ -613,12 +669,13 @@ app.get('/api/chiller/uptime', async (req, res) => {
     const query = `
       SELECT
         SUM(status_air) AS total_segundos_encendido_air,
-        SUM(status_vdf_pump_process) AS total_segundos_encendido_pump
+        SUM(status_vdf_pump_process) AS total_segundos_encendido_pump,
+        (SELECT SUM(status_water) FROM chiller_agua_segundos WHERE DATE(fecha_hora) = ?) AS total_segundos_encendido_water
       FROM chiller_aire_segundos
       WHERE DATE(fecha_hora) = ?
     `;
     
-    const [results] = await db.pool.query(query, [date]);
+    const [results] = await db.pool.query(query, [date, date]);
     res.json(results[0]);
   } catch (error) {
     console.error('Error:', error);

@@ -455,8 +455,10 @@ app.get('/api/chiller/export/:table', async (req, res) => {
             const fecha = row.fecha_hora;
             const formattedRow = {};
 
-            // Formatear la fecha para que Excel la reconozca como datetime
-            formattedRow['Fecha y Hora'] = fecha; // Excel reconocerá automáticamente el objeto Date
+            // Formatear la fecha como string en formato legible
+            const formattedDate = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')} ${String(fecha.getHours()).padStart(2, '0')}:${String(fecha.getMinutes()).padStart(2, '0')}:${String(fecha.getSeconds()).padStart(2, '0')}`;
+            
+            formattedRow['Fecha y Hora'] = formattedDate;
 
             // Copiar y renombrar las columnas restantes, excluyendo id y chiller_id
             for (const [key, value] of Object.entries(row)) {
@@ -488,39 +490,7 @@ app.get('/api/chiller/export/:table', async (req, res) => {
         const wb = XLSX.utils.book_new();
         
         // Configurar las opciones de la hoja
-        const ws = XLSX.utils.json_to_sheet(formattedData, {
-            dateNF: 'dd/mm/yyyy hh:mm:ss' // Formato de fecha personalizado
-        });
-
-        // Configurar tipos de celda para asegurar que los números se mantengan como números
-        const range = XLSX.utils.decode_range(ws['!ref']);
-        for (let R = range.s.r + 1; R <= range.e.r; ++R) { // Empezar desde la fila 1 (saltando headers)
-            for (let C = range.s.c; C <= range.e.c; ++C) {
-                const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-                const cell = ws[cellAddress];
-                
-                if (cell && cell.v !== null && cell.v !== undefined) {
-                    // Si es la primera columna (Fecha y Hora), mantener como fecha
-                    if (C === 0) {
-                        cell.t = 'd'; // Tipo fecha
-                        cell.z = 'dd/mm/yyyy hh:mm:ss';
-                    } else {
-                        // Para otras columnas, verificar si es numérico
-                        const numericValue = Number(cell.v);
-                        if (!isNaN(numericValue) && isFinite(numericValue)) {
-                            cell.t = 'n'; // Tipo numérico
-                            cell.v = numericValue;
-                            // Aplicar formato numérico con decimales si es necesario
-                            if (numericValue % 1 !== 0) {
-                                cell.z = '0.00'; // Formato con 2 decimales
-                            } else {
-                                cell.z = '0'; // Formato entero
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        const ws = XLSX.utils.json_to_sheet(formattedData);
 
         // Ajustar el ancho de las columnas basado en el contenido
         const colWidths = [];
@@ -531,9 +501,7 @@ app.get('/api/chiller/export/:table', async (req, res) => {
                 header.length,
                 ...formattedData.map(row => {
                     const value = row[header];
-                    return value instanceof Date 
-                        ? 20  // Ancho fijo para fechas
-                        : String(value).length;
+                    return String(value).length;
                 })
             );
             colWidths.push({ wch: Math.min(maxWidth + 2, 20) }); // max width 20 characters
@@ -544,13 +512,11 @@ app.get('/api/chiller/export/:table', async (req, res) => {
         const sheetName = `Datos ${date} ${table.includes('segundos') ? '(seg)' : '(min)'}`;
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
-        // Generar el buffer del archivo con configuración específica para fechas
+        // Generar el buffer del archivo
         const excelBuffer = XLSX.write(wb, { 
             type: 'buffer', 
             bookType: 'xlsx',
-            compression: true,
-            cellDates: true, // Mantener las fechas como fechas
-            dateNF: 'dd/mm/yyyy hh:mm:ss' // Formato de fecha para todo el libro
+            compression: true
         });
 
         // Configurar headers para la descarga

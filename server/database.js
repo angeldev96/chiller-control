@@ -30,7 +30,7 @@ async function testConnection() {
     console.log('Zona horaria de MySQL:', timeZoneResult[0]['@@session.time_zone']);
     
     // Verificar una fecha de ejemplo
-    const [dateTest] = await connection.query('SELECT NOW() as current_time');
+    const [dateTest] = await connection.query('SELECT NOW() as `current_time`');
     console.log('Hora actual en MySQL:', dateTest[0].current_time);
     
     const [tables] = await connection.query('SHOW TABLES');

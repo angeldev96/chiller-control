@@ -633,16 +633,22 @@ app.get('/api/chiller/uptime', async (req, res) => {
   const { date } = req.query;
   
   try {
+    // Crear las fechas de inicio y fin del día para optimizar la consulta
+    const startDate = `${date} 00:00:00`;
+    const endDate = `${date} 23:59:59`;
+    
     const query = `
       SELECT
         SUM(status_air) AS total_segundos_encendido_air,
         SUM(status_vdf_pump_process) AS total_segundos_encendido_pump,
-        (SELECT SUM(status_water) FROM chiller_agua_segundos WHERE DATE(fecha_hora) = ?) AS total_segundos_encendido_water
+        (SELECT SUM(status_water) 
+         FROM chiller_agua_segundos 
+         WHERE fecha_hora >= ? AND fecha_hora <= ?) AS total_segundos_encendido_water
       FROM chiller_aire_segundos
-      WHERE DATE(fecha_hora) = ?
+      WHERE fecha_hora >= ? AND fecha_hora <= ?
     `;
     
-    const [results] = await db.pool.query(query, [date, date]);
+    const [results] = await db.pool.query(query, [startDate, endDate, startDate, endDate]);
     res.json(results[0]);
   } catch (error) {
     console.error('Error:', error);

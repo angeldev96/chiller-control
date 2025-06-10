@@ -47,6 +47,7 @@ async function getModbusClient() {
  * @param {number} pulseDurationMs Duration of the pulse in milliseconds.
  * @returns {Promise<boolean>} True on success (both writes successful), False otherwise.
  */
+
 async function pulseCoil(modbusClient, address, pulseDurationMs = PULSE_WIDTH_MS) {
     if (!modbusClient || !modbusClient.isOpen) {
         console.error("ERROR: Pulse coil failed: Client not connected or not open.");
@@ -602,7 +603,7 @@ app.get('/api/chiller/component-status/:table', async (req, res) => {
         if (table === 'chiller_aire_segundos') {
             componentStatus = {
                 compresor: lastRecord.status_compresor || 0,
-                ventilador: lastRecord.status_bomba || 0, // Usando status_bomba como ventilador según el mapeo
+                ventilador: lastRecord.status_air || 0,
                 bomba_proceso: lastRecord.status_vdf_pump_process || 0,
                 timestamp: lastRecord.fecha_hora
             };

@@ -39,6 +39,7 @@ export default function DataLogger() {
   const [temperatureAverages, setTemperatureAverages] = useState({
     avg_temp_entrada: null,
     avg_temp_salida: null,
+    avg_temp_cisterna2: null,
     total_records: 0,
     date: null,
     table: null
@@ -63,7 +64,7 @@ export default function DataLogger() {
     setLoading(true);
     setError(null);
     try {
-      let url = `http://cisa.arrayanhn.com:3001/api/chiller/data/${selectedOption}?date=${dateFilter}`;
+      let url = `http://tegus.arrayanhn.com:3001/api/chiller/data/${selectedOption}?date=${dateFilter}`;
       
       const response = await axios.get(url);
       setData(response.data.data || []);
@@ -81,7 +82,7 @@ export default function DataLogger() {
     setExporting(true);
     try {
       const response = await axios.get(
-        `http://cisa.arrayanhn.com:3001/api/chiller/export/${selectedOption}?date=${dateFilter}`,
+        `http://tegus.arrayanhn.com:3001/api/chiller/export/${selectedOption}?date=${dateFilter}`,
         { responseType: 'blob' }
       );
 
@@ -107,7 +108,7 @@ export default function DataLogger() {
 
     try {
       const response = await axios.get(
-        `http://cisa.arrayanhn.com:3001/api/chiller/uptime?date=${dateFilter}&table=${selectedOption}`
+        `http://tegus.arrayanhn.com:3001/api/chiller/uptime?date=${dateFilter}&table=${selectedOption}`
       );
       
       if (response.data) {
@@ -155,7 +156,7 @@ export default function DataLogger() {
 
     try {
       const response = await axios.get(
-        `http://cisa.arrayanhn.com:3001/api/chiller/temperature-averages/${selectedOption}?date=${dateFilter}`
+        `http://tegus.arrayanhn.com:3001/api/chiller/temperature-averages/${selectedOption}?date=${dateFilter}`
       );
       
       if (response.data && response.data.success) {
@@ -167,6 +168,7 @@ export default function DataLogger() {
       setTemperatureAverages({
         avg_temp_entrada: null,
         avg_temp_salida: null,
+        avg_temp_cisterna2: null,
         total_records: 0,
         date: null,
         table: null
@@ -177,7 +179,7 @@ export default function DataLogger() {
   const fetchComponentStatus = async () => {
     try {
       const response = await axios.get(
-        `http://cisa.arrayanhn.com:3001/api/chiller/component-status/${selectedOption}`
+        `http://tegus.arrayanhn.com:3001/api/chiller/component-status/${selectedOption}`
       );
       
       if (response.data && response.data.success) {
@@ -536,6 +538,11 @@ export default function DataLogger() {
                     <div className="text-lg font-semibold text-red-600">
                       Salida del evaporador: {temperatureAverages.avg_temp_salida}°C
                     </div>
+                    {selectedOption === 'chiller_agua_minutos' && temperatureAverages.avg_temp_cisterna2 !== null && (
+                      <div className="text-lg font-semibold text-cyan-600">
+                        Temperatura Cisterna 2: {temperatureAverages.avg_temp_cisterna2}°C
+                      </div>
+                    )}
                     <div className="text-xs text-gray-500 mt-3">
                       Basado en {temperatureAverages.total_records} registros del día
                     </div>

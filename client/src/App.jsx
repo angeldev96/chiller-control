@@ -5,7 +5,7 @@ import './App.css';
 import DataLogger from './components/DataLogger';
 
 // Use HTTP since SSL is not available
-const DOMAIN = 'cisa.arrayanhn.com';
+const DOMAIN = 'tegus.arrayanhn.com';
 const PORT = '3001';
 const API_BASE_URL = `http://${DOMAIN}:${PORT}/api`;
 

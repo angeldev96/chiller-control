@@ -10,11 +10,11 @@ export default defineConfig({
   server: {
     port: 3007,
     host: '0.0.0.0', // Permite conexiones desde cualquier IP
-    allowedHosts: ['cisa.arrayanhn.com']
+    allowedHosts: ['tegus.arrayanhn.com']
   },
   preview: {
     port: 3007,
     host: '0.0.0.0', // Permite conexiones desde cualquier IP
-    allowedHosts: ['cisa.arrayanhn.com']
+    allowedHosts: ['tegus.arrayanhn.com']
   },
 })

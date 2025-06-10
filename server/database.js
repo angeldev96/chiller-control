@@ -30,7 +30,7 @@ async function testConnection() {
     console.log('Zona horaria de MySQL:', timeZoneResult[0]['@@session.time_zone']);
     
     // Verificar una fecha de ejemplo
-    const [dateTest] = await connection.query('SELECT NOW() as current_time');
+    const [dateTest] = await connection.query('SELECT NOW() as `current_time`');
     console.log('Hora actual en MySQL:', dateTest[0].current_time);
     
     const [tables] = await connection.query('SHOW TABLES');
@@ -124,11 +124,75 @@ async function getStats(table, field, startDate, endDate) {
   }
 }
 
+// Función para obtener promedios de temperatura del día para evaporadores
+async function getDailyTemperatureAverages(table, date) {
+  try {
+    const connection = await pool.getConnection();
+    
+    // Determinar las columnas de temperatura según la tabla
+    let tempColumns = {};
+    if (table === 'chiller_aire_minutos') {
+      tempColumns = {
+        entrada: 'temp_entrada_evaporador_c',
+        salida: 'temp_salida_evaporador_c'
+      };
+    } else if (table === 'chiller_agua_minutos') {
+      tempColumns = {
+        entrada: 'temp_entrada_evaporador_c',
+        salida: 'temp_salida_evaporador_c'
+      };
+    } else {
+      throw new Error('Tabla no válida para promedios de temperatura');
+    }
+
+    let query;
+    if (table === 'chiller_agua_minutos') {
+      query = `SELECT 
+        AVG(temp_entrada_evaporador_c) as avg_temp_entrada,
+        AVG(temp_salida_evaporador_c) as avg_temp_salida,
+        AVG(temp_entrada_condensador_c) as avg_temp_cisterna2,
+        COUNT(*) as total_records
+       FROM ${table}
+       WHERE DATE(fecha_hora) = ?`;
+    } else {
+      query = `SELECT 
+        AVG(${tempColumns.entrada}) as avg_temp_entrada,
+        AVG(${tempColumns.salida}) as avg_temp_salida,
+        COUNT(*) as total_records
+       FROM ${table}
+       WHERE DATE(fecha_hora) = ?`;
+    }
+
+    const [rows] = await connection.query(query, [date]);
+    
+    connection.release();
+    
+    const result = rows[0];
+    const response = {
+      avg_temp_entrada: result.avg_temp_entrada ? parseFloat(result.avg_temp_entrada).toFixed(2) : null,
+      avg_temp_salida: result.avg_temp_salida ? parseFloat(result.avg_temp_salida).toFixed(2) : null,
+      total_records: result.total_records,
+      date: date,
+      table: table
+    };
+
+    if (table === 'chiller_agua_minutos') {
+      response.avg_temp_cisterna2 = result.avg_temp_cisterna2 ? parseFloat(result.avg_temp_cisterna2).toFixed(2) : null;
+    }
+    
+    return response;
+  } catch (error) {
+    console.error('Error al obtener promedios de temperatura:', error);
+    throw error;
+  }
+}
+
 module.exports = {
   pool,
   getLastRecords,
   getRecordsByDateRange,
   getLastRecord,
   getStats,
+  getDailyTemperatureAverages,
   testConnection
 }; 

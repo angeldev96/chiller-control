@@ -47,6 +47,7 @@ async function getModbusClient() {
  * @param {number} pulseDurationMs Duration of the pulse in milliseconds.
  * @returns {Promise<boolean>} True on success (both writes successful), False otherwise.
  */
+
 async function pulseCoil(modbusClient, address, pulseDurationMs = PULSE_WIDTH_MS) {
     if (!modbusClient || !modbusClient.isOpen) {
         console.error("ERROR: Pulse coil failed: Client not connected or not open.");
@@ -455,8 +456,10 @@ app.get('/api/chiller/export/:table', async (req, res) => {
             const fecha = row.fecha_hora;
             const formattedRow = {};
 
-            // Formatear la fecha para que Excel la reconozca como datetime
-            formattedRow['Fecha y Hora'] = fecha; // Excel reconocerá automáticamente el objeto Date
+            // Formatear la fecha como string en formato legible
+            const formattedDate = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')} ${String(fecha.getHours()).padStart(2, '0')}:${String(fecha.getMinutes()).padStart(2, '0')}:${String(fecha.getSeconds()).padStart(2, '0')}`;
+            
+            formattedRow['Fecha y Hora'] = formattedDate;
 
             // Copiar y renombrar las columnas restantes, excluyendo id y chiller_id
             for (const [key, value] of Object.entries(row)) {
@@ -466,7 +469,18 @@ app.get('/api/chiller/export/:table', async (req, res) => {
                         .split('_')
                         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
                         .join(' ');
-                    formattedRow[formattedKey] = value;
+                    
+                    // Asegurar que los valores numéricos se mantengan como números
+                    let processedValue = value;
+                    if (value !== null && value !== undefined && value !== '') {
+                        // Intentar convertir a número si es posible
+                        const numericValue = Number(value);
+                        if (!isNaN(numericValue) && isFinite(numericValue)) {
+                            processedValue = numericValue;
+                        }
+                    }
+                    
+                    formattedRow[formattedKey] = processedValue;
                 }
             }
 
@@ -477,9 +491,7 @@ app.get('/api/chiller/export/:table', async (req, res) => {
         const wb = XLSX.utils.book_new();
         
         // Configurar las opciones de la hoja
-        const ws = XLSX.utils.json_to_sheet(formattedData, {
-            dateNF: 'dd/mm/yyyy hh:mm:ss' // Formato de fecha personalizado
-        });
+        const ws = XLSX.utils.json_to_sheet(formattedData);
 
         // Ajustar el ancho de las columnas basado en el contenido
         const colWidths = [];
@@ -490,9 +502,7 @@ app.get('/api/chiller/export/:table', async (req, res) => {
                 header.length,
                 ...formattedData.map(row => {
                     const value = row[header];
-                    return value instanceof Date 
-                        ? 20  // Ancho fijo para fechas
-                        : String(value).length;
+                    return String(value).length;
                 })
             );
             colWidths.push({ wch: Math.min(maxWidth + 2, 20) }); // max width 20 characters
@@ -503,13 +513,11 @@ app.get('/api/chiller/export/:table', async (req, res) => {
         const sheetName = `Datos ${date} ${table.includes('segundos') ? '(seg)' : '(min)'}`;
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
-        // Generar el buffer del archivo con configuración específica para fechas
+        // Generar el buffer del archivo
         const excelBuffer = XLSX.write(wb, { 
             type: 'buffer', 
             bookType: 'xlsx',
-            compression: true,
-            cellDates: true, // Mantener las fechas como fechas
-            dateNF: 'dd/mm/yyyy hh:mm:ss' // Formato de fecha para todo el libro
+            compression: true
         });
 
         // Configurar headers para la descarga
@@ -528,19 +536,119 @@ app.get('/api/chiller/export/:table', async (req, res) => {
     }
 });
 
+// Endpoint para obtener promedios de temperatura diarios de evaporadores
+app.get('/api/chiller/temperature-averages/:table', async (req, res) => {
+    try {
+        const { table } = req.params;
+        const { date } = req.query;
+
+        if (!date) {
+            return res.status(400).json({
+                success: false,
+                message: 'Se requiere una fecha para calcular promedios'
+            });
+        }
+
+        // Validar que la tabla sea de minutos y válida para promedios de temperatura
+        const allowedTables = ['chiller_aire_minutos', 'chiller_agua_minutos'];
+        if (!allowedTables.includes(table)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Tabla no válida para promedios de temperatura. Solo se permiten tablas de minutos.'
+            });
+        }
+
+        const temperatureData = await db.getDailyTemperatureAverages(table, date);
+        
+        res.json({ 
+            success: true, 
+            data: temperatureData 
+        });
+    } catch (error) {
+        console.error('Error al obtener promedios de temperatura:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al calcular los promedios de temperatura del día'
+        });
+    }
+});
+
+// Endpoint para obtener estados de componentes del chiller
+app.get('/api/chiller/component-status/:table', async (req, res) => {
+    try {
+        const { table } = req.params;
+        
+        // Validar que la tabla sea de segundos
+        const allowedTables = ['chiller_aire_segundos', 'chiller_agua_segundos'];
+        if (!allowedTables.includes(table)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Tabla no válida para estados de componentes. Solo se permiten tablas de segundos.'
+            });
+        }
+
+        // Obtener el último registro para mostrar el estado actual
+        const lastRecord = await db.getLastRecord(table);
+        
+        if (!lastRecord) {
+            return res.status(404).json({
+                success: false,
+                message: 'No se encontraron registros para esta tabla'
+            });
+        }
+
+        // Extraer los estados relevantes según la tabla
+        let componentStatus = {};
+        
+        if (table === 'chiller_aire_segundos') {
+            componentStatus = {
+                compresor: lastRecord.status_compresor || 0,
+                ventilador: lastRecord.status_air || 0,
+                bomba_proceso: lastRecord.status_vdf_pump_process || 0,
+                timestamp: lastRecord.fecha_hora
+            };
+        } else if (table === 'chiller_agua_segundos') {
+            componentStatus = {
+                compresor: lastRecord.status_compresor || 0,
+                bomba_condensador: lastRecord.status_bomba_agua || 0,
+                bomba_proceso: lastRecord.vdf_condensador_status || 0, // Usando vdf_condensador_status como bomba de proceso
+                timestamp: lastRecord.fecha_hora
+            };
+        }
+
+        res.json({ 
+            success: true, 
+            data: componentStatus 
+        });
+    } catch (error) {
+        console.error('Error al obtener estados de componentes:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al obtener los estados de los componentes del chiller'
+        });
+    }
+});
+
 app.get('/api/chiller/uptime', async (req, res) => {
   const { date } = req.query;
   
   try {
+    // Crear las fechas de inicio y fin del día para optimizar la consulta
+    const startDate = `${date} 00:00:00`;
+    const endDate = `${date} 23:59:59`;
+    
     const query = `
       SELECT
         SUM(status_air) AS total_segundos_encendido_air,
-        SUM(status_vdf_pump_process) AS total_segundos_encendido_pump
+        SUM(status_vdf_pump_process) AS total_segundos_encendido_pump,
+        (SELECT SUM(status_water) 
+         FROM chiller_agua_segundos 
+         WHERE fecha_hora >= ? AND fecha_hora <= ?) AS total_segundos_encendido_water
       FROM chiller_aire_segundos
-      WHERE DATE(fecha_hora) = ?
+      WHERE fecha_hora >= ? AND fecha_hora <= ?
     `;
     
-    const [results] = await db.pool.query(query, [date]);
+    const [results] = await db.pool.query(query, [startDate, endDate, startDate, endDate]);
     res.json(results[0]);
   } catch (error) {
     console.error('Error:', error);

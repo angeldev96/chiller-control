@@ -274,7 +274,7 @@ app.get('/api/chiller/data/:table', async (req, res) => {
         
         // Validar que la tabla sea una de las permitidas
         const allowedTables = ['chiller_agua_minutos', 'chiller_agua_segundos', 
-                             'chiller_aire_minutos', 'chiller_aire_segundos'];
+                             'chiller_aire_minutos', 'chiller_aire_segundos', 'ion_meter_minutos'];
         if (!allowedTables.includes(table)) {
             return res.status(400).json({ 
                 success: false, 
@@ -347,7 +347,7 @@ app.get('/api/chiller/data/:table/range', async (req, res) => {
         }
 
         const allowedTables = ['chiller_agua_minutos', 'chiller_agua_segundos', 
-                             'chiller_aire_minutos', 'chiller_aire_segundos'];
+                             'chiller_aire_minutos', 'chiller_aire_segundos', 'ion_meter_minutos'];
         if (!allowedTables.includes(table)) {
             return res.status(400).json({ 
                 success: false, 
@@ -386,7 +386,7 @@ app.get('/api/chiller/data/:table/last', async (req, res) => {
     try {
         const { table } = req.params;
         const allowedTables = ['chiller_agua_minutos', 'chiller_agua_segundos', 
-                             'chiller_aire_minutos', 'chiller_aire_segundos'];
+                             'chiller_aire_minutos', 'chiller_aire_segundos', 'ion_meter_minutos'];
         if (!allowedTables.includes(table)) {
             return res.status(400).json({ 
                 success: false, 
@@ -430,7 +430,8 @@ app.get('/api/chiller/export/:table', async (req, res) => {
             'chiller_aire_minutos', 
             'chiller_agua_minutos',
             'chiller_aire_segundos',
-            'chiller_agua_segundos'
+            'chiller_agua_segundos',
+            'ion_meter_minutos'
         ];
         
         if (!allowedTables.includes(table)) {
@@ -569,6 +570,124 @@ app.get('/api/chiller/temperature-averages/:table', async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error al calcular los promedios de temperatura del día'
+        });
+    }
+});
+
+// Endpoint para obtener promedios de energía del medidor ION
+app.get('/api/chiller/energy-averages/:table', async (req, res) => {
+    try {
+        const { table } = req.params;
+        const { date } = req.query;
+
+        if (!date) {
+            return res.status(400).json({
+                success: false,
+                message: 'Se requiere una fecha para calcular promedios de energía'
+            });
+        }
+
+        // Validar que la tabla sea válida para promedios de energía
+        const allowedTables = ['ion_meter_minutos'];
+        if (!allowedTables.includes(table)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Tabla no válida para promedios de energía. Solo se permiten tablas del medidor ION.'
+            });
+        }
+
+        // Consultar los promedios de energía del día
+        const query = `
+            SELECT 
+                AVG(kwh_imp) as avg_kwh_imp,
+                AVG(kwh_exp) as avg_kwh_exp,
+                AVG(kwh_tot) as avg_kwh_tot,
+                AVG(kwh_net) as avg_kwh_net,
+                AVG(kvarh_imp) as avg_kvarh_imp,
+                AVG(kvarh_exp) as avg_kvarh_exp,
+                AVG(kvarh_tot) as avg_kvarh_tot,
+                AVG(kvarh_net) as avg_kvarh_net,
+                AVG(kvah_tot) as avg_kvah_tot,
+                AVG(freq) as avg_freq,
+                AVG(vln_a) as avg_vln_a,
+                AVG(vln_b) as avg_vln_b,
+                AVG(vln_avg) as avg_vln_avg,
+                AVG(ia) as avg_ia,
+                AVG(ib) as avg_ib,
+                AVG(pf) as avg_pf,
+                COUNT(*) as total_records
+            FROM ${table}
+            WHERE DATE(fecha_hora) = ?
+        `;
+
+        const [results] = await db.pool.query(query, [date]);
+        
+        if (results.length === 0 || results[0].total_records === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'No hay datos de energía para la fecha seleccionada'
+            });
+        }
+
+        const energyData = {
+            ...results[0],
+            date: date,
+            table: table
+        };
+
+        res.json({ 
+            success: true, 
+            data: energyData 
+        });
+    } catch (error) {
+        console.error('Error al obtener promedios de energía:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al calcular los promedios de energía del día'
+        });
+    }
+});
+
+// Nuevo Endpoint para obtener KWH_NET de medianoche del medidor ION
+app.get('/api/chiller/ion/midnight-kwh-net', async (req, res) => {
+    try {
+        const { date } = req.query;
+
+        if (!date) {
+            return res.status(400).json({
+                success: false,
+                message: 'Se requiere una fecha para obtener el KWH NET de medianoche'
+            });
+        }
+
+        const midnightTimestamp = `${date} 00:00:00`;
+
+        const query = `
+            SELECT kwh_net
+            FROM ion_meter_minutos
+            WHERE fecha_hora = ?
+            LIMIT 1
+        `;
+
+        const [results] = await db.pool.query(query, [midnightTimestamp]);
+        
+        if (results.length > 0) {
+            res.json({
+                success: true,
+                kwh_net_midnight: results[0].kwh_net
+            });
+        } else {
+            res.status(404).json({
+                success: false,
+                message: 'No se encontró KWH NET para la medianoche de la fecha seleccionada'
+            });
+        }
+
+    } catch (error) {
+        console.error('Error al obtener KWH NET de medianoche:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al obtener el KWH NET de medianoche'
         });
     }
 });

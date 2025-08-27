@@ -16,6 +16,7 @@ const opciones = [
   { value: 'chiller_aire_segundos', label: 'Chiller Aire Segundos' },
   { value: 'chiller_agua_minutos', label: 'Chiller Agua Minutos' },
   { value: 'chiller_agua_segundos', label: 'Chiller Agua Segundos' },
+  { value: 'ion_meter_minutos', label: 'Medidor Ion' },
 ];
 
 const ITEMS_PER_PAGE = 10;
@@ -44,6 +45,8 @@ export default function DataLogger() {
     date: null,
     table: null
   });
+  // Nuevo estado para KWH NET de medianoche
+  const [midnightKWH, setMidnightKWH] = useState(null);
   // Estado para estados de componentes
   const [componentStatus, setComponentStatus] = useState({
     compresor: 0,
@@ -67,7 +70,26 @@ export default function DataLogger() {
       let url = `http://tegus.arrayanhn.com:3001/api/chiller/data/${selectedOption}?date=${dateFilter}`;
       
       const response = await axios.get(url);
-      setData(response.data.data || []);
+      
+      // Sanitizar los datos para asegurar que los valores numéricos sean de tipo number
+      const rawData = response.data.data || [];
+      const sanitizedData = rawData.map(row => {
+        const newRow = {};
+        for (const key in row) {
+          if (Object.hasOwnProperty.call(row, key)) {
+            let value = row[key];
+            // Intentar convertir a número si no es 'fecha_hora' y es parseable como número
+            if (key !== 'fecha_hora' && value !== null && value !== undefined && !isNaN(value)) {
+              newRow[key] = parseFloat(value);
+            } else {
+              newRow[key] = value;
+            }
+          }
+        }
+        return newRow;
+      });
+
+      setData(sanitizedData);
     } catch (err) {
       setError('Error al cargar los datos');
       console.error('Error:', err);
@@ -176,6 +198,78 @@ export default function DataLogger() {
     }
   };
 
+  const fetchEnergyAverages = async () => {
+    if (!dateFilter) return;
+
+    try {
+      const response = await axios.get(
+        `http://tegus.arrayanhn.com:3001/api/chiller/energy-averages/${selectedOption}?date=${dateFilter}`
+      );
+      
+      if (response.data && response.data.success) {
+        // Asegurar que todos los valores numéricos sean números válidos
+        const data = response.data.data;
+        console.log('Datos de energía recibidos del servidor:', data);
+        
+        const sanitizedData = {};
+        
+        Object.keys(data).forEach(key => {
+          if (key === 'date' || key === 'table' || key === 'total_records') {
+            sanitizedData[key] = data[key];
+          } else {
+            // Para valores numéricos, convertir a número y validar
+            const numValue = parseFloat(data[key]);
+            sanitizedData[key] = isNaN(numValue) ? null : numValue;
+          }
+        });
+        
+        console.log('Datos de energía sanitizados:', sanitizedData);
+        // setEnergyAverages(sanitizedData); // This line is removed
+      }
+    } catch (err) {
+      console.error('Error al obtener promedios de energía:', err);
+      // Reset energy averages on error
+      // setEnergyAverages({ // This line is removed
+      //   avg_kwh_imp: null,
+      //   avg_kwh_exp: null,
+      //   avg_kwh_tot: null,
+      //   avg_kwh_net: null,
+      //   avg_kvarh_imp: null,
+      //   avg_kvarh_exp: null,
+      //   avg_kvarh_tot: null,
+      //   avg_kvarh_net: null,
+      //   avg_kvah_tot: null,
+      //   avg_freq: null,
+      //   avg_vln_avg: null,
+      //   avg_ia: null,
+      //   avg_ib: null,
+      //   avg_pf: null,
+      //   total_records: 0,
+      //   date: null,
+      //   table: null
+      // });
+    }
+  };
+
+  const fetchMidnightKWH = async () => {
+    if (!dateFilter) {
+      setMidnightKWH(null);
+      return;
+    }
+
+    try {
+      const response = await axios.get(`http://tegus.arrayanhn.com:3001/api/chiller/ion/midnight-kwh-net?date=${dateFilter}`);
+      if (response.data && response.data.success) {
+        setMidnightKWH(response.data.kwh_net_midnight);
+      } else {
+        setMidnightKWH(null);
+      }
+    } catch (err) {
+      console.error('Error al obtener KWH NET de medianoche:', err);
+      setMidnightKWH(null);
+    }
+  };
+
   const fetchComponentStatus = async () => {
     try {
       const response = await axios.get(
@@ -207,6 +301,9 @@ export default function DataLogger() {
     if (selectedOption === 'chiller_aire_minutos' || selectedOption === 'chiller_agua_minutos') {
       fetchTemperatureAverages();
     }
+    if (selectedOption === 'ion_meter_minutos') {
+      fetchMidnightKWH();
+    }
   }, [selectedOption, dateFilter]);
 
   const formatDateTime = (dateStr) => {
@@ -230,6 +327,23 @@ export default function DataLogger() {
       seconds: totalSeconds,
       formatted: `${uptimeObj.hours}h ${uptimeObj.minutes}m ${uptimeObj.seconds}s`
     };
+  };
+
+  // Función para formatear valores de energía
+  const formatEnergyValue = (value, unit = '') => {
+    if (value === null || value === undefined || isNaN(value)) return 'N/A';
+    
+    // Si la unidad ya es una kilo-unidad, no dividir por 1000
+    if (unit.startsWith('k')) {
+      return `${value % 1 === 0 ? value : value.toFixed(3)} ${unit}`;
+    }
+
+    // Lógica original para convertir a kilo-unidades si es necesario
+    if (Math.abs(value) >= 1000) {
+      return `${(value / 1000) % 1 === 0 ? (value / 1000) : (value / 1000).toFixed(3)} k${unit}`;
+    } else {
+      return `${value % 1 === 0 ? value : value.toFixed(3)} ${unit}`;
+    }
   };
 
   // Función para formatear la fecha en formato DD/M/YYYY
@@ -267,10 +381,35 @@ export default function DataLogger() {
     );
   };
 
+  const formatIonHeaderText = (text) => {
+    const headerMappings = {
+      // 'meter_id': 'ID MEDIDOR',
+      'fecha_hora': 'FECHA HORA',
+      'kwh_imp': 'KWH IMP',
+      'kwh_exp': 'KWH EXP',
+      'kwh_tot': 'KWH TOTAL',
+      'kwh_net': 'KWH NETO',
+      'kvarh_imp': 'KVARH IMP',
+      'kvarh_exp': 'KVARH EXP',
+      'kvarh_tot': 'KVARH TOTAL',
+      'kvarh_net': 'KVARH NETO',
+      'kvah_tot': 'KVAH TOTAL',
+      'freq': 'FRECUENCIA',
+      'vln_a': 'VLN A',
+      'vln_b': 'VLN B',
+      'vln_avg': 'VLN PROM',
+      'ia': 'CORRIENTE A',
+      'ib': 'CORRIENTE B',
+      'pf': 'FACTOR POT'
+    };
+    
+    return headerMappings[text] || text.replace(/_/g, ' ').toUpperCase();
+  };
+
   const renderTableHeaders = () => {
     if (data.length === 0) return null;
     const headers = Object.keys(data[0])
-      .filter(key => key !== 'id' && key !== 'chiller_id');
+      .filter(key => key !== 'id' && key !== 'chiller_id' && (selectedOption === 'ion_meter_minutos' ? key !== 'meter_id' : true));
     return (
       <tr>
         {headers.map(header => (
@@ -278,7 +417,7 @@ export default function DataLogger() {
             key={header} 
             className="px-6 py-2 text-center sticky top-0 bg-gradient-to-b from-blue-600 to-blue-700 text-white font-semibold text-xs uppercase tracking-wider"
           >
-            {formatHeaderText(header)}
+            {selectedOption === 'ion_meter_minutos' ? header.toUpperCase().replace(/_/g, ' ') : formatHeaderText(header)}
           </th>
         ))}
       </tr>
@@ -295,10 +434,30 @@ export default function DataLogger() {
         `}
       >
         {Object.entries(row).map(([key, value]) => {
-          if (key === 'id' || key === 'chiller_id') return null;
+          if (key === 'id' || key === 'chiller_id' || (selectedOption === 'ion_meter_minutos' && key === 'meter_id')) return null;
           
           // Determinar si es un valor numérico (excepto fecha_hora)
           const isNumeric = key !== 'fecha_hora' && !isNaN(value);
+          
+          // Formatear valores específicos del medidor ION
+          let displayValue = value;
+          if (selectedOption === 'ion_meter_minutos' && isNumeric) {
+            if (key.startsWith('kwh_')) {
+              displayValue = formatEnergyValue(value, 'kWh');
+            } else if (key.startsWith('kvarh_')) {
+              displayValue = formatEnergyValue(value, 'kVarh');
+            } else if (key.startsWith('kvah_')) {
+              displayValue = formatEnergyValue(value, 'kVAh');
+            } else if (key === 'freq') {
+              displayValue = value !== null && value !== undefined ? `${value.toFixed(2)} Hz` : 'N/A';
+            } else if (key.startsWith('vln_')) {
+              displayValue = value !== null && value !== undefined ? `${value.toFixed(2)} V` : 'N/A';
+            } else if (key.startsWith('i')) {
+              displayValue = value !== null && value !== undefined ? `${value.toFixed(2)} A` : 'N/A';
+            } else if (key === 'pf') {
+              displayValue = value !== null && value !== undefined ? value.toFixed(3) : 'N/A';
+            }
+          }
           
           return (
             <td 
@@ -309,7 +468,7 @@ export default function DataLogger() {
                   : 'text-center text-gray-800'
               }`}
             >
-              {key === 'fecha_hora' ? formatDateTime(value) : value}
+              {key === 'fecha_hora' ? formatDateTime(value) : displayValue}
             </td>
           );
         })}
@@ -553,7 +712,39 @@ export default function DataLogger() {
           </div>
         )}
 
-        {/* Mensaje cuando no hay fecha seleccionada */}
+         {/* Sección de KWH NET de medianoche del medidor ION */}
+         {(selectedOption === 'ion_meter_minutos') && dateFilter && midnightKWH !== null && (
+           <div className="p-6 bg-gradient-to-r from-purple-50 to-indigo-50 border-b">
+             <h3 className="text-xl font-bold text-gray-800 mb-4">KWH NET de Medianoche</h3>
+             <div className="grid grid-cols-1 gap-6">
+               <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-purple-500">
+                 <h4 className="text-lg font-semibold text-purple-700 mb-3">
+                   Medidor Ion - {formatDisplayDate(dateFilter)}
+                 </h4>
+                 <div className="space-y-2">
+                   <div className="text-md text-gray-700 font-medium">
+                     KWH NET (00:00:00): 
+                   </div>
+                   <div className="text-lg font-semibold text-purple-600">
+                     {midnightKWH !== null && !isNaN(midnightKWH) ? `${midnightKWH} kWh` : 'N/A'}
+                   </div>
+                 </div>
+               </div>
+             </div>
+           </div>
+         )}
+
+         {/* Mensaje cuando no hay datos de energía disponibles */}
+         {(selectedOption === 'ion_meter_minutos') && dateFilter && midnightKWH === null && (
+           <div className="p-6 bg-gradient-to-r from-yellow-50 to-orange-50 border-b">
+             <div className="text-center text-yellow-700">
+               <h3 className="text-lg font-semibold mb-2">No hay datos de KWH NET de medianoche disponibles</h3>
+               <p className="text-sm">No se encontró registro de KWH NET para la medianoche de la fecha {formatDisplayDate(dateFilter)}</p>
+             </div>
+           </div>
+         )}
+
+         {/* Mensaje cuando no hay fecha seleccionada */}
         {!dateFilter && (
           <div className="flex-1 flex items-center justify-center text-gray-500">
             Por favor, seleccione una fecha para ver los registros
@@ -585,4 +776,4 @@ export default function DataLogger() {
       </div>
     </div>
   );
-} 
+}

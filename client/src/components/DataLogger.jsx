@@ -17,6 +17,7 @@ const opciones = [
   { value: 'chiller_agua_minutos', label: 'Chiller Agua Minutos' },
   { value: 'chiller_agua_segundos', label: 'Chiller Agua Segundos' },
   { value: 'ion_meter_minutos', label: 'Medidor Ion' },
+  { value: 'resumen_bitacora', label: 'Resumen Bitácora' },
 ];
 
 const ITEMS_PER_PAGE = 10;
@@ -45,7 +46,7 @@ export default function DataLogger() {
     date: null,
     table: null
   });
-  // Nuevo estado para KWH NET de medianoche
+  // Nuevo estado para KWH IMP de medianoche
   const [midnightKWH, setMidnightKWH] = useState(null);
   // Estado para estados de componentes
   const [componentStatus, setComponentStatus] = useState({
@@ -258,14 +259,14 @@ export default function DataLogger() {
     }
 
     try {
-      const response = await axios.get(`http://tegus.arrayanhn.com:3001/api/chiller/ion/midnight-kwh-net?date=${dateFilter}`);
+      const response = await axios.get(`http://tegus.arrayanhn.com:3001/api/chiller/ion/midnight-kwh-imp?date=${dateFilter}`);
       if (response.data && response.data.success) {
-        setMidnightKWH(response.data.kwh_net_midnight);
+        setMidnightKWH(response.data.kwh_imp_midnight);
       } else {
         setMidnightKWH(null);
       }
     } catch (err) {
-      console.error('Error al obtener KWH NET de medianoche:', err);
+      console.error('Error al obtener KWH IMP de medianoche:', err);
       setMidnightKWH(null);
     }
   };
@@ -712,10 +713,10 @@ export default function DataLogger() {
           </div>
         )}
 
-         {/* Sección de KWH NET de medianoche del medidor ION */}
+         {/* Sección de KWH IMP de medianoche del medidor ION */}
          {(selectedOption === 'ion_meter_minutos') && dateFilter && midnightKWH !== null && (
            <div className="p-6 bg-gradient-to-r from-purple-50 to-indigo-50 border-b">
-             <h3 className="text-xl font-bold text-gray-800 mb-4">KWH NET de Medianoche</h3>
+             <h3 className="text-xl font-bold text-gray-800 mb-4">KWH IMP de Medianoche</h3>
              <div className="grid grid-cols-1 gap-6">
                <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-purple-500">
                  <h4 className="text-lg font-semibold text-purple-700 mb-3">
@@ -723,7 +724,7 @@ export default function DataLogger() {
                  </h4>
                  <div className="space-y-2">
                    <div className="text-md text-gray-700 font-medium">
-                     KWH NET (00:00:00): 
+                     KWH IMP: 
                    </div>
                    <div className="text-lg font-semibold text-purple-600">
                      {midnightKWH !== null && !isNaN(midnightKWH) ? `${midnightKWH} kWh` : 'N/A'}
@@ -738,8 +739,8 @@ export default function DataLogger() {
          {(selectedOption === 'ion_meter_minutos') && dateFilter && midnightKWH === null && (
            <div className="p-6 bg-gradient-to-r from-yellow-50 to-orange-50 border-b">
              <div className="text-center text-yellow-700">
-               <h3 className="text-lg font-semibold mb-2">No hay datos de KWH NET de medianoche disponibles</h3>
-               <p className="text-sm">No se encontró registro de KWH NET para la medianoche de la fecha {formatDisplayDate(dateFilter)}</p>
+               <h3 className="text-lg font-semibold mb-2">No hay datos de KWH IMP de medianoche disponibles</h3>
+               <p className="text-sm">No se encontró registro de KWH IMP para la medianoche de la fecha {formatDisplayDate(dateFilter)}</p>
              </div>
            </div>
          )}

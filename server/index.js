@@ -692,6 +692,50 @@ app.get('/api/chiller/ion/midnight-kwh-net', async (req, res) => {
     }
 });
 
+// Nuevo Endpoint para obtener KWH_IMP de medianoche del medidor ION
+app.get('/api/chiller/ion/midnight-kwh-imp', async (req, res) => {
+    try {
+        const { date } = req.query;
+
+        if (!date) {
+            return res.status(400).json({
+                success: false,
+                message: 'Se requiere una fecha para obtener el KWH IMP de medianoche'
+            });
+        }
+
+        const midnightTimestamp = `${date} 00:00:00`;
+
+        const query = `
+            SELECT kwh_imp
+            FROM ion_meter_minutos
+            WHERE fecha_hora = ?
+            LIMIT 1
+        `;
+
+        const [results] = await db.pool.query(query, [midnightTimestamp]);
+        
+        if (results.length > 0) {
+            res.json({
+                success: true,
+                kwh_imp_midnight: results[0].kwh_imp
+            });
+        } else {
+            res.status(404).json({
+                success: false,
+                message: 'No se encontró KWH IMP para la medianoche de la fecha seleccionada'
+            });
+        }
+
+    } catch (error) {
+        console.error('Error al obtener KWH IMP de medianoche:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al obtener el KWH IMP de medianoche'
+        });
+    }
+});
+
 // Endpoint para obtener estados de componentes del chiller
 app.get('/api/chiller/component-status/:table', async (req, res) => {
     try {

@@ -56,6 +56,16 @@ export default function DataLogger() {
     bomba_condensador: 0,
     timestamp: null
   });
+  // Estado para resumen bitácora
+  const [summaryData, setSummaryData] = useState({
+    main_meter_kwh: null,
+    hourmeter_water_chiller: null,
+    hourmeter_air_chiller: null,
+    temp_central_chilled_water_tank: null,
+    water_level_tank2: null,
+    temp_tank2: null,
+    date: null
+  });
 
   const isMinutesTable = selectedOption.includes('minutos');
 
@@ -293,17 +303,57 @@ export default function DataLogger() {
     }
   };
 
+  const fetchSummaryData = async () => {
+    if (!dateFilter) {
+      setSummaryData({
+        main_meter_kwh: null,
+        hourmeter_water_chiller: null,
+        hourmeter_air_chiller: null,
+        temp_central_chilled_water_tank: null,
+        water_level_tank2: null,
+        temp_tank2: null,
+        date: null
+      });
+      return;
+    }
+
+    try {
+      const response = await axios.get(
+        `http://tegus.arrayanhn.com:3001/api/chiller/summary-bitacora?date=${dateFilter}`
+      );
+      
+      if (response.data && response.data.success) {
+        setSummaryData(response.data.data);
+      }
+    } catch (err) {
+      console.error('Error al obtener datos del resumen bitácora:', err);
+      setSummaryData({
+        main_meter_kwh: null,
+        hourmeter_water_chiller: null,
+        hourmeter_air_chiller: null,
+        temp_central_chilled_water_tank: null,
+        water_level_tank2: null,
+        temp_tank2: null,
+        date: null
+      });
+    }
+  };
+
   useEffect(() => {
-    fetchData();
-    if (selectedOption === 'chiller_aire_segundos' || selectedOption === 'chiller_agua_segundos') {
-      fetchSensorUptime();
-      fetchComponentStatus();
-    }
-    if (selectedOption === 'chiller_aire_minutos' || selectedOption === 'chiller_agua_minutos') {
-      fetchTemperatureAverages();
-    }
-    if (selectedOption === 'ion_meter_minutos') {
-      fetchMidnightKWH();
+    if (selectedOption === 'resumen_bitacora') {
+      fetchSummaryData();
+    } else {
+      fetchData();
+      if (selectedOption === 'chiller_aire_segundos' || selectedOption === 'chiller_agua_segundos') {
+        fetchSensorUptime();
+        fetchComponentStatus();
+      }
+      if (selectedOption === 'chiller_aire_minutos' || selectedOption === 'chiller_agua_minutos') {
+        fetchTemperatureAverages();
+      }
+      if (selectedOption === 'ion_meter_minutos') {
+        fetchMidnightKWH();
+      }
     }
   }, [selectedOption, dateFilter]);
 
@@ -353,6 +403,16 @@ export default function DataLogger() {
       return dayjs(dateStr).format('D/M/YYYY');
     } catch (error) {
       console.error('Error al formatear fecha para mostrar:', error);
+      return dateStr;
+    }
+  };
+
+  // Función para obtener la fecha del día siguiente
+  const getNextDayDate = (dateStr) => {
+    try {
+      return dayjs(dateStr).add(1, 'day').format('D/M/YYYY');
+    } catch (error) {
+      console.error('Error al calcular fecha del día siguiente:', error);
       return dateStr;
     }
   };
@@ -745,6 +805,108 @@ export default function DataLogger() {
            </div>
          )}
 
+         {/* Sección de Resumen Bitácora */}
+         {(selectedOption === 'resumen_bitacora') && dateFilter && (
+           <div className="p-6 bg-gradient-to-r from-blue-50 to-cyan-50 border-b">
+             <h3 className="text-xl font-bold text-gray-800 mb-6">Resumen Bitácora - {formatDisplayDate(dateFilter)}</h3>
+             <div className="max-w-2xl mx-auto">
+               <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+                 
+                 {/* Main Meter ION7300 kWh */}
+                 <div className="flex items-center p-4 border-b border-gray-200 hover:bg-gray-50">
+                   <div className="w-1 h-12 bg-blue-500 rounded-full mr-4"></div>
+                   <div>
+                     <h4 className="text-md font-semibold text-gray-800 inline">
+                       Main Meter ION7300 kWh – Copenergy SA
+                     </h4>
+                     <span className="text-xl font-bold text-blue-600 ml-4">
+                       {summaryData.main_meter_kwh !== null && !isNaN(summaryData.main_meter_kwh) ? 
+                         summaryData.main_meter_kwh : 'N/A'}
+                     </span>
+                     <p className="text-sm text-gray-600">({getNextDayDate(dateFilter)})</p>
+                   </div>
+                 </div>
+
+                 {/* Hourmeter - Water Chiller */}
+                 <div className="flex items-center p-4 border-b border-gray-200 hover:bg-gray-50">
+                   <div className="w-1 h-12 bg-green-500 rounded-full mr-4"></div>
+                   <div>
+                     <h4 className="text-md font-semibold text-gray-800 inline">
+                       Hourmeter - Water Chiller
+                     </h4>
+                     <span className="text-xl font-bold text-green-600 ml-4">
+                       {summaryData.hourmeter_water_chiller !== null && !isNaN(summaryData.hourmeter_water_chiller) ? 
+                         summaryData.hourmeter_water_chiller : 'N/A'}
+                     </span>
+                     <p className="text-sm text-gray-600">Tiempo de operación del día</p>
+                   </div>
+                 </div>
+
+                 {/* Hourmeter - Air Chiller */}
+                 <div className="flex items-center p-4 border-b border-gray-200 hover:bg-gray-50">
+                   <div className="w-1 h-12 bg-purple-500 rounded-full mr-4"></div>
+                   <div>
+                     <h4 className="text-md font-semibold text-gray-800 inline">
+                       Hourmeter - Air Chiller
+                     </h4>
+                     <span className="text-xl font-bold text-purple-600 ml-4">
+                       {summaryData.hourmeter_air_chiller !== null && !isNaN(summaryData.hourmeter_air_chiller) ? 
+                         summaryData.hourmeter_air_chiller : 'N/A'}
+                     </span>
+                     <p className="text-sm text-gray-600">Tiempo de operación del día</p>
+                   </div>
+                 </div>
+
+                 {/* Temp °C – Central Chilled Water Tank (Bottom) */}
+                 <div className="flex items-center p-4 border-b border-gray-200 hover:bg-gray-50">
+                   <div className="w-1 h-12 bg-orange-500 rounded-full mr-4"></div>
+                   <div>
+                     <h4 className="text-md font-semibold text-gray-800 inline">
+                       Temp °C – Central Chilled Water Tank (Bottom)
+                     </h4>
+                     <span className="text-xl font-bold text-orange-600 ml-4">
+                       {summaryData.temp_central_chilled_water_tank !== null && !isNaN(summaryData.temp_central_chilled_water_tank) ? 
+                         summaryData.temp_central_chilled_water_tank : 'N/A'}
+                     </span>
+                     <p className="text-sm text-gray-600">Promedio del día</p>
+                   </div>
+                 </div>
+
+                 {/* Water Level – Tank 2 */}
+                 <div className="flex items-center p-4 border-b border-gray-200 hover:bg-gray-50">
+                   <div className="w-1 h-12 bg-cyan-500 rounded-full mr-4"></div>
+                   <div>
+                     <h4 className="text-md font-semibold text-gray-800 inline">
+                       Water Level – Tank 2
+                     </h4>
+                     <span className="text-xl font-bold text-cyan-600 ml-4">
+                       {summaryData.water_level_tank2 !== null && !isNaN(summaryData.water_level_tank2) ? 
+                         summaryData.water_level_tank2 : 'N/A'}
+                     </span>
+                     <p className="text-sm text-gray-600">Último registro del día</p>
+                   </div>
+                 </div>
+
+                 {/* Temp °C – Tank 2 */}
+                 <div className="flex items-center p-4 hover:bg-gray-50">
+                   <div className="w-1 h-12 bg-red-500 rounded-full mr-4"></div>
+                   <div>
+                     <h4 className="text-md font-semibold text-gray-800 inline">
+                       Temp °C – Tank 2
+                     </h4>
+                     <span className="text-xl font-bold text-red-600 ml-4">
+                       {summaryData.temp_tank2 !== null && !isNaN(summaryData.temp_tank2) ? 
+                         summaryData.temp_tank2 : 'N/A'}
+                     </span>
+                     <p className="text-sm text-gray-600">Último registro del día</p>
+                   </div>
+                 </div>
+
+               </div>
+             </div>
+           </div>
+         )}
+
          {/* Mensaje cuando no hay fecha seleccionada */}
         {!dateFilter && (
           <div className="flex-1 flex items-center justify-center text-gray-500">
@@ -760,7 +922,7 @@ export default function DataLogger() {
         )}
 
         {/* Tabla de datos con scroll */}
-        {dateFilter && (
+        {dateFilter && selectedOption !== 'resumen_bitacora' && (
           <div className="flex-1 overflow-hidden">
             <div className="h-full overflow-auto">
               <table className="min-w-full divide-y divide-gray-200 table-fixed">

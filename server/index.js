@@ -819,6 +819,319 @@ app.get('/api/chiller/uptime', async (req, res) => {
   }
 });
 
+// Endpoint de diagnóstico para verificar estructura de tablas
+app.get('/api/chiller/debug-tables', async (req, res) => {
+    try {
+        const tables = ['chiller_agua_minutos', 'chiller_agua_segundos', 'chiller_aire_segundos', 'ion_meter_minutos'];
+        const results = {};
+
+        for (const table of tables) {
+            // Obtener estructura de la tabla
+            const [columns] = await db.pool.query(`DESCRIBE ${table}`);
+            
+            // Obtener algunos registros de ejemplo
+            const [sampleData] = await db.pool.query(`SELECT * FROM ${table} ORDER BY fecha_hora DESC LIMIT 3`);
+            
+            // Contar registros totales
+            const [count] = await db.pool.query(`SELECT COUNT(*) as total FROM ${table}`);
+
+            results[table] = {
+                columns: columns.map(col => col.Field),
+                sampleData: sampleData,
+                totalRecords: count[0].total
+            };
+        }
+
+        res.json({ success: true, data: results });
+    } catch (error) {
+        console.error('Error al obtener información de debug:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al obtener información de debug'
+        });
+    }
+});
+
+// Endpoint de diagnóstico específico para resumen bitácora
+app.get('/api/chiller/debug-summary/:date', async (req, res) => {
+    try {
+        const { date } = req.params;
+        
+        // Calcular la fecha del día siguiente para el KWH IMP
+        const nextDay = new Date(date);
+        nextDay.setDate(nextDay.getDate() + 1);
+        const nextDayStr = nextDay.toISOString().split('T')[0];
+        const midnightNextDay = `${nextDayStr} 00:00:00`;
+
+        // Crear timestamps para las consultas del día seleccionado
+        const endOfDay = `${date} 23:59:59`;
+        const startOfDay = `${date} 00:00:00`;
+
+        console.log(`Debug Summary para fecha: ${date}`);
+        console.log(`Día siguiente: ${nextDayStr}`);
+        console.log(`Medianoche día siguiente: ${midnightNextDay}`);
+        console.log(`Inicio del día: ${startOfDay}`);
+        console.log(`Fin del día: ${endOfDay}`);
+
+        const debugResults = {};
+
+        // 1. Test KWH IMP query
+        try {
+            const [kwhResults] = await db.pool.query(`
+                SELECT kwh_imp, fecha_hora
+                FROM ion_meter_minutos
+                WHERE fecha_hora = ?
+                LIMIT 1
+            `, [midnightNextDay]);
+            debugResults.kwh_query = {
+                query: `SELECT kwh_imp FROM ion_meter_minutos WHERE fecha_hora = '${midnightNextDay}'`,
+                results: kwhResults,
+                count: kwhResults.length
+            };
+        } catch (err) {
+            debugResults.kwh_query = { error: err.message };
+        }
+
+        // 2. Test Water Uptime query
+        try {
+            const [waterResults] = await db.pool.query(`
+                SELECT SUM(status_water) as total_segundos, COUNT(*) as total_records
+                FROM chiller_agua_segundos
+                WHERE fecha_hora >= ? AND fecha_hora <= ?
+            `, [startOfDay, endOfDay]);
+            debugResults.water_uptime_query = {
+                query: `SELECT SUM(status_water) FROM chiller_agua_segundos WHERE fecha_hora BETWEEN '${startOfDay}' AND '${endOfDay}'`,
+                results: waterResults,
+                count: waterResults.length
+            };
+        } catch (err) {
+            debugResults.water_uptime_query = { error: err.message };
+        }
+
+        // 3. Test Air Uptime query
+        try {
+            const [airResults] = await db.pool.query(`
+                SELECT SUM(status_air) as total_segundos, COUNT(*) as total_records
+                FROM chiller_aire_segundos
+                WHERE fecha_hora >= ? AND fecha_hora <= ?
+            `, [startOfDay, endOfDay]);
+            debugResults.air_uptime_query = {
+                query: `SELECT SUM(status_air) FROM chiller_aire_segundos WHERE fecha_hora BETWEEN '${startOfDay}' AND '${endOfDay}'`,
+                results: airResults,
+                count: airResults.length
+            };
+        } catch (err) {
+            debugResults.air_uptime_query = { error: err.message };
+        }
+
+        // 4. Test Temperature query
+        try {
+            const [tempResults] = await db.pool.query(`
+                SELECT AVG(temp_entrada_evaporador_c) as avg_temp, COUNT(*) as total_records
+                FROM chiller_agua_minutos
+                WHERE DATE(fecha_hora) = ?
+            `, [date]);
+            debugResults.temp_query = {
+                query: `SELECT AVG(temp_entrada_evaporador_c) FROM chiller_agua_minutos WHERE DATE(fecha_hora) = '${date}'`,
+                results: tempResults,
+                count: tempResults.length
+            };
+        } catch (err) {
+            debugResults.temp_query = { error: err.message };
+        }
+
+        // 5. Test Water Level query
+        try {
+            const [levelResults] = await db.pool.query(`
+                SELECT level_sensor_tank2, fecha_hora
+                FROM chiller_agua_minutos
+                WHERE fecha_hora <= ?
+                ORDER BY fecha_hora DESC
+                LIMIT 1
+            `, [endOfDay]);
+            debugResults.water_level_query = {
+                query: `SELECT level_sensor_tank2 FROM chiller_agua_minutos WHERE fecha_hora <= '${endOfDay}' ORDER BY fecha_hora DESC LIMIT 1`,
+                results: levelResults,
+                count: levelResults.length
+            };
+        } catch (err) {
+            debugResults.water_level_query = { error: err.message };
+        }
+
+        // 6. Test Tank 2 Temperature query
+        try {
+            const [tank2Results] = await db.pool.query(`
+                SELECT temp_entrada_evaporador_c, fecha_hora
+                FROM chiller_agua_minutos
+                WHERE fecha_hora <= ?
+                ORDER BY fecha_hora DESC
+                LIMIT 1
+            `, [endOfDay]);
+            debugResults.tank2_temp_query = {
+                query: `SELECT temp_entrada_evaporador_c FROM chiller_agua_minutos WHERE fecha_hora <= '${endOfDay}' ORDER BY fecha_hora DESC LIMIT 1`,
+                results: tank2Results,
+                count: tank2Results.length
+            };
+        } catch (err) {
+            debugResults.tank2_temp_query = { error: err.message };
+        }
+
+        res.json({ 
+            success: true, 
+            date: date,
+            nextDay: nextDayStr,
+            data: debugResults 
+        });
+
+    } catch (error) {
+        console.error('Error en debug summary:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al obtener información de debug del resumen'
+        });
+    }
+});
+
+// Endpoint para obtener resumen bitácora
+app.get('/api/chiller/summary-bitacora', async (req, res) => {
+    try {
+        const { date } = req.query;
+
+        if (!date) {
+            return res.status(400).json({
+                success: false,
+                message: 'Se requiere una fecha para obtener el resumen bitácora'
+            });
+        }
+
+        // Calcular la fecha del día siguiente para el KWH IMP
+        const nextDay = new Date(date);
+        nextDay.setDate(nextDay.getDate() + 1);
+        const nextDayStr = nextDay.toISOString().split('T')[0];
+        const midnightNextDay = `${nextDayStr} 00:00:00`;
+
+        // Crear timestamps para las consultas del día seleccionado
+        const endOfDay = `${date} 23:59:59`;
+        const startOfDay = `${date} 00:00:00`;
+
+        // 1. Main Meter ION7300 kWh (medianoche del día siguiente)
+        const kwhQuery = `
+            SELECT kwh_imp
+            FROM ion_meter_minutos
+            WHERE fecha_hora = ?
+            LIMIT 1
+        `;
+
+        // 2. Hourmeter - Water Chiller (horas de tiempo encendido del chiller agua)
+        const waterUptimeQuery = `
+            SELECT SUM(status_water) as total_segundos
+            FROM chiller_agua_segundos
+            WHERE fecha_hora >= ? AND fecha_hora <= ?
+        `;
+
+        // 3. Hourmeter - Air Chiller (horas de tiempo encendido del chiller aire)
+        const airUptimeQuery = `
+            SELECT SUM(status_air) as total_segundos
+            FROM chiller_aire_segundos
+            WHERE fecha_hora >= ? AND fecha_hora <= ?
+        `;
+
+        // 4. Temp °C – Central Chilled Water Tank (Bottom) - promedio del día de entrada al evaporador
+        const tempCentralQuery = `
+            SELECT AVG(temp_entrada_evaporador_c) as avg_temp
+            FROM chiller_agua_minutos
+            WHERE DATE(fecha_hora) = ?
+        `;
+
+        // 5. Water Level – Tank 2 (a las 23:59:59, dividido entre 1000)
+        const waterLevelQuery = `
+            SELECT level_sensor_tank2
+            FROM chiller_agua_minutos
+            WHERE fecha_hora <= ?
+            ORDER BY fecha_hora DESC
+            LIMIT 1
+        `;
+
+        // 6. Temp °C – Tank 2 (temp entrada evaporador a las 23:59:59)
+        const tempTank2Query = `
+            SELECT temp_entrada_evaporador_c
+            FROM chiller_agua_minutos
+            WHERE fecha_hora <= ?
+            ORDER BY fecha_hora DESC
+            LIMIT 1
+        `;
+
+        // Ejecutar todas las consultas con logs de depuración
+        console.log('Ejecutando consulta KWH IMP para:', midnightNextDay);
+        const [kwhResults] = await db.pool.query(kwhQuery, [midnightNextDay]);
+        console.log('Resultados KWH IMP:', kwhResults);
+
+        console.log('Ejecutando consulta Water Uptime para:', startOfDay, 'a', endOfDay);
+        const [waterUptimeResults] = await db.pool.query(waterUptimeQuery, [startOfDay, endOfDay]);
+        console.log('Resultados Water Uptime:', waterUptimeResults);
+
+        console.log('Ejecutando consulta Air Uptime para:', startOfDay, 'a', endOfDay);
+        const [airUptimeResults] = await db.pool.query(airUptimeQuery, [startOfDay, endOfDay]);
+        console.log('Resultados Air Uptime:', airUptimeResults);
+
+        console.log('Ejecutando consulta Temperature para:', date);
+        const [tempCentralResults] = await db.pool.query(tempCentralQuery, [date]);
+        console.log('Resultados Temperature:', tempCentralResults);
+
+        console.log('Ejecutando consulta Water Level para:', endOfDay);
+        const [waterLevelResults] = await db.pool.query(waterLevelQuery, [endOfDay]);
+        console.log('Resultados Water Level:', waterLevelResults);
+
+        console.log('Ejecutando consulta Tank2 Temp para:', endOfDay);
+        const [tempTank2Results] = await db.pool.query(tempTank2Query, [endOfDay]);
+        console.log('Resultados Tank2 Temp:', tempTank2Results);
+
+        // Procesar los resultados
+        const summaryData = {
+            // Main Meter ION7300 kWh
+            main_meter_kwh: kwhResults.length > 0 && kwhResults[0].kwh_imp !== null ? 
+                parseFloat(kwhResults[0].kwh_imp) : null,
+
+            // Hourmeter - Water Chiller (convertir segundos a horas con 3 decimales)
+            hourmeter_water_chiller: waterUptimeResults.length > 0 && waterUptimeResults[0].total_segundos !== null ? 
+                parseFloat((parseFloat(waterUptimeResults[0].total_segundos) / 3600).toFixed(3)) : null,
+
+            // Hourmeter - Air Chiller (convertir segundos a horas con 3 decimales)
+            hourmeter_air_chiller: airUptimeResults.length > 0 && airUptimeResults[0].total_segundos !== null ? 
+                parseFloat((parseFloat(airUptimeResults[0].total_segundos) / 3600).toFixed(3)) : null,
+
+            // Temp °C – Central Chilled Water Tank (Bottom)
+            temp_central_chilled_water_tank: tempCentralResults.length > 0 && tempCentralResults[0].avg_temp !== null ? 
+                parseFloat(parseFloat(tempCentralResults[0].avg_temp).toFixed(2)) : null,
+
+            // Water Level – Tank 2 (dividir entre 1000)
+            water_level_tank2: waterLevelResults.length > 0 && waterLevelResults[0].level_sensor_tank2 !== null ? 
+                parseFloat((parseFloat(waterLevelResults[0].level_sensor_tank2) / 1000).toFixed(1)) : null,
+
+            // Temp °C – Tank 2
+            temp_tank2: tempTank2Results.length > 0 && tempTank2Results[0].temp_entrada_evaporador_c !== null ? 
+                parseFloat(parseFloat(tempTank2Results[0].temp_entrada_evaporador_c).toFixed(2)) : null,
+
+            date: date,
+            next_day: nextDayStr
+        };
+
+        console.log('Datos procesados del resumen:', summaryData);
+
+        res.json({ 
+            success: true, 
+            data: summaryData 
+        });
+
+    } catch (error) {
+        console.error('Error al obtener resumen bitácora:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al obtener el resumen bitácora'
+        });
+    }
+});
+
 const PORT = 3001;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor HTTP corriendo en puerto ${PORT} y accesible desde la red`);
